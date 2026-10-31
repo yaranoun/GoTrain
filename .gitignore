@@ -4,16 +4,20 @@ __pycache__/
 .venv/
 .ipynb_checkpoints/
 
-# Data, runs, checkpoints (synced to S3, not git)
-workspace/*
-!workspace/.gitkeep
+# Large files stay out of git (synced to S3 later): data, caches, checkpoints
 data/
+workspace/cache/
+*.npz
+*.hdf5
 *.pt
 *.ckpt
 *.h5
+*.zip
+
+# Small results ARE tracked: workspace/runs/**/{config,metrics,status,eval}*.json,
+# history.csv, plots/*.png, ledger/vault/playbook .jsonl, logs/*.log
 
 # Local / private
 *.pdf
 .env
 nohup.out
-logs/
