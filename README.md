@@ -71,7 +71,9 @@ python -m gotrain.verify --session <session_id>
 
 Every number in the report follows one chain, and `python -m gotrain.verify` re-derives it:
 
-1. **Report:** `report/results.md` shows a test score and its vault entry hash.
+1. **Report:** `report/results.md` shows a test score and its vault entry hash. The finalized model is chosen by
+   code (the session's latest promoted Level 2 composite, else the incumbent); the agent's message in the finalize
+   transcript is narration, not the decision.
 2. **Vault:** `workspace/vault.jsonl` is hash-chained, one entry per dataset, with the model's checkpoint hash
    (and member hashes for an ensemble) and the `test_stats.npz` hash. `verify --full` recomputes the chain and
    every hash.

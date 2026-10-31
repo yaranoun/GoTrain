@@ -159,7 +159,7 @@ def build(task: str, model_id: str | None = None) -> str:
                   f"- Session `{h.get('session_id')}` (arm {h.get('arm')}), LLM `{h.get('model')}`, B = {h.get('B')} "
                   f"GPU-min (R = {h.get('R')}), code tree `{h.get('code_tree')}`, prompt `{h.get('prompt_hash')}`.",
                   f"- GPU minutes charged: Level 1 {s['p1_min']:.1f}, Level 2 {s['p2_min']:.1f}; runs: {s['runs']}; "
-                  f"seed sigma {s['sigma_seed'] if s['sigma_seed'] is not None else '—'}; "
+                  f"seed sigma {format(s['sigma_seed'], '.4f') if s['sigma_seed'] is not None else '—'}; "
                   f"{s['tokens']:,} Bedrock tokens."]
         op = s.get("opening")
         if op:
@@ -170,8 +170,9 @@ def build(task: str, model_id: str | None = None) -> str:
             lines += ["- Lesson tests: " + "; ".join(f"{t['lesson_id']} {t['result']} (z {t['z']:+.2f})"
                                                      for t in s["lesson_tests"]) + "."]
         if s["born"]:
-            lines += ["- Lessons written here:"] + [f"  - {L['lesson_id']} ({L['status']}, z {L['effect']['z']:+.2f}): "
-                                                    f"{L['statement']}" for L in s["born"]]
+            lines += ["- Lessons written here (z in the lesson's own direction):"] + [
+                f"  - {L['lesson_id']} ({L['status']}, z {L.get('sign', 1) * L['effect']['z']:+.2f}): {L['statement']}"
+                for L in s["born"]]
         lines += [""]
     inc = _incidents(task)
     if inc:
