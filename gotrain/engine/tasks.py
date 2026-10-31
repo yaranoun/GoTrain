@@ -31,7 +31,20 @@ CHANNELS = {
     },
 }
 
-RGB = {"m-eurosat": ["B04", "B03", "B02"]}
+# Which channel plays which role, for composites and indices (true colour, false colour, NDVI).
+BAND_ROLES = {
+    "m-eurosat": {"red": "B04", "green": "B03", "blue": "B02", "nir": "B08", "swir1": "B11", "swir2": "B12"},
+}
+
+GSD_M = {
+    "m-eurosat": 10, "m-brick-kiln": 10, "m-so2sat": 10, "m-forestnet": 15, "m-pv4ger": 0.1,
+    "m-bigearthnet": 10, "m-pv4ger-seg": 0.1, "m-chesapeake": 1, "m-cashew-plant": 10,
+    "m-SA-crop-type": 10, "m-nz-cattle": 0.1, "m-NeonTree": 0.1,
+}
+
+
+def band_roles(task: str) -> dict:
+    return BAND_ROLES.get(task, {})
 
 
 def info(task: str) -> dict:

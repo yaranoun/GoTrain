@@ -18,7 +18,8 @@ from sklearn.metrics import confusion_matrix, f1_score
 
 from gotrain.engine.data import _load_arrays, load_split
 from gotrain.engine.models import build_model
-from gotrain.engine.tasks import RGB
+from gotrain.engine.tasks import band_roles
+from gotrain.engine.viz import composite, views
 from gotrain.engine.train import predict, resolve_config
 
 
@@ -120,13 +121,6 @@ def plot_confusion(cm, classes, path) -> None:
     plt.close(fig)
 
 
-def rgb_composite(x: np.ndarray, channel_names: list[str], rgb: list[str]) -> np.ndarray:
-    """(C,H,W) -> (H,W,3) with a 2–98 percentile stretch."""
-    img = np.stack([x[channel_names.index(b)] for b in rgb], -1)
-    lo, hi = np.percentile(img, 2), np.percentile(img, 98)
-    return np.clip((img - lo) / max(hi - lo, 1e-6), 0, 1)
-
-
 def plot_failures(data, probs, task, path, n=16) -> None:
     """Most confident wrong predictions: what the agent looks at to form hypotheses."""
     y, pred = data["y"].astype(np.int64), probs.argmax(1)
@@ -134,14 +128,15 @@ def plot_failures(data, probs, task, path, n=16) -> None:
     wrong = wrong[np.argsort(-probs[wrong, pred[wrong]])][:n]
     if len(wrong) == 0:
         return
-    rgb = RGB.get(task, list(data["channel_names"][:3]))
+    names = list(data["channel_names"])
+    rgb = next(iter(views(names, band_roles(task)).values()))  # true colour, else first 3 channels
     cols = 4
     rows = int(np.ceil(len(wrong) / cols))
     fig, axes = plt.subplots(rows, cols, figsize=(cols * 2.4, rows * 2.6), squeeze=False)
     for ax in axes.flat:
         ax.axis("off")
     for ax, i in zip(axes.flat, wrong):
-        ax.imshow(rgb_composite(data["x"][i], list(data["channel_names"]), rgb))
+        ax.imshow(composite(data["x"][i], names, rgb))
         ax.set_title(f"true: {data['classes'][y[i]]}\npred: {data['classes'][pred[i]]} ({probs[i, pred[i]]:.2f})",
                      fontsize=7)
     fig.tight_layout()

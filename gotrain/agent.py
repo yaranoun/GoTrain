@@ -16,7 +16,9 @@ Tune on the validation split only. Never try to access the test split except via
 
 def build_agent() -> Agent:
     model = BedrockModel(model_id=MODEL_ID, region_name=REGION)
-    tools = []  # TODO: register tools from gotrain.tools
+    from gotrain.tools.explore import list_tasks, profile_dataset, save_profile_notes
+
+    tools = [list_tasks, profile_dataset, save_profile_notes]
     return Agent(model=model, system_prompt=SYSTEM_PROMPT, tools=tools)
 
 

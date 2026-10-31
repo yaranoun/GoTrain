@@ -31,10 +31,13 @@ pip install -r requirements.txt
 # 1. Download one task (not the whole benchmark)
 python -m gotrain.engine.download m-eurosat
 
-# 2. Train (creates workspace/runs/<task>/<run_id>/); first run builds a .npz cache
+# 2. Profile: stats + true colour / false colour / NDVI grids in workspace/profiles/<task>/
+python -m gotrain.engine.profile m-eurosat
+
+# 3. Train (creates workspace/runs/<task>/<run_id>/); first run builds a .npz cache
 python -m gotrain.engine.train --task m-eurosat --set backbone=resnet18 weights=imagenet epochs=30
 
-# 3. Evaluate on val, with and without test-time augmentation (writes plots/)
+# 4. Evaluate on val, with and without test-time augmentation (writes plots/)
 python -m gotrain.engine.evaluate workspace/runs/m-eurosat/m-eurosat-0001 --tta
 ```
 
