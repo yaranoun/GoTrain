@@ -455,12 +455,13 @@ JSON report go to `.sandbox/step9/`). Gate tests without data: `tests/test_step9
 - **m-SA-crop-type:** stored order B01–B12 without B10, then CLM; names verified by the resolution fingerprint
   (60 m bands in 6×6 blocks, 20 m in 2×2, B02/B03/B04/B08 native 10 m) and the correlation fingerprint, and by the
   GEO-Bench converter. `CHANNELS` keeps the 12 S2 bands (SSL4EO fills B10). **Values are 8-bit (0–255, ≈
-  reflectance × 255)**, not reflectance × 10⁴ as on the other S2 tasks, so `DISPLAY_SCALE` is 76.5, and
-  `norm: div10000` gives SSL4EO inputs about 39× too small. Cloud layer: 0 on every pixel (dropped). 10 classes
-  (converter names); class 0 "No Data" → `IGNORE_INDEX = 0`. Five dates per field tile with identical label
-  masks → `GROUP_BY = label_hash` (val: 250 groups). True colour looks natural.
+  reflectance × 255)**, not reflectance × 10⁴ as on the other S2 tasks. Decision (build agent, option A):
+  `tasks.VALUE_SCALE = 10000/255` rescales them (rounded, lossless) when train/val enter cache v2 and when
+  `final_test` loads test, so `norm: div10000` / SSL4EO see reflectance × 10⁴ and `DISPLAY_SCALE` is 3000. Cloud
+  layer: 0 on every pixel (dropped). 10 classes (converter names); class 0 "No Data" → `IGNORE_INDEX = 0`. Five dates
+  per field tile with identical label masks → `GROUP_BY = label_hash` (val: 250 groups). True colour looks natural.
 - **m-nz-cattle:** 8-bit aerial RGB (R, G, B), 500×500, classes `no cattle` / `cattle` (masks are radius-6 px
   boxes around points). About half the images have a `_shifted` twin at the same coordinates (train 204 pairs, val 6;
-  50 val locations also occur in train: disclosed). No `GROUP_BY` yet: it needs a name-based rule in `data.py`.
+  50 val locations also occur in train: disclosed). `GROUP_BY = nz_location` (name without `_shifted`).
 - Scopes: SA-crop (segmentation, s2-multispectral, multispectral, (1,10]m); nz-cattle (segmentation, aerial-rgb,
   rgb, ≤1m). No ledger row for either task exists in any checkout.
