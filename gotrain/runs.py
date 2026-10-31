@@ -64,7 +64,7 @@ class ConfigError(ValueError):
 NUMERIC = {  # key: (type, min, max)
     "lr": (float, 1e-6, 1.0), "weight_decay": (float, 0.0, 1.0), "batch_size": (int, 1, 512),
     "epochs": (int, 1, 300), "warmup_epochs": (int, 0, 50), "label_smoothing": (float, 0.0, 0.5),
-    "train_fraction": (float, 0.01, 1.0), "seed": (int, 0, 2**31 - 1), "time_limit_min": (float, 0.5, 1440.0),
+    "train_fraction": (float, 0.01, 1.0), "seed": (int, 0, 2**31 - 1), "time_limit_min": (float, 0.05, 1440.0),
 }
 CHOICES = {"optimizer": {"adamw", "sgd"}, "norm": {None, "zscore", "div10000"}, "decoder": set(DECODERS),
            "band_fill": {None, "norm_mean", "interp_b06"}}

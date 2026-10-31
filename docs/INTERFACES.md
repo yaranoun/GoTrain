@@ -278,9 +278,9 @@ def snapshot(src: Path, dest: Path) -> str          # returns sha256
 **Qualifying evidence pair** (`mine_effects`): two rows of one `session_id`, both of which are:
 - `status` done;
 - `launched_by` agent;
+- `stage` train (screens are never lesson evidence, plan O9);
 - not `move` debug;
-- of equal `run_cap_min` (so a screen pairs only with a screen);
-- of equal `train_fraction` and `epochs`.
+- of equal `run_cap_min`, `train_fraction` and `epochs`.
 
 In addition, `len(knobs.diff_groups(a.config, b.config)) == 1`. No lineage edge is required. The baseline is the
 parent when one run is the other's parent; otherwise it is the earlier-launched run. Effects use
