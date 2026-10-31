@@ -101,6 +101,22 @@ def gate_faults():
         check(f"fault {fault}: charged, no incumbent", (row.get("charged_min") or 0) > 0 and runs.incumbent(s) is None)
 
 
+def gate_better(B=45):
+    """Known-better pair at the chain's real run cap (default B = 45 -> R = 4.5 min)."""
+    s2 = new_session("better-real", B)
+    a = runs.launch(s2, FAST, "gate: imagenet 64 px")
+    wait(a["run_id"], s2)
+    wait_harness(s2)
+    b = runs.launch(s2, {"backbone": "resnet18", "weights": "ssl4eo_moco", "batch_size": 64},
+                    "gate: SSL4EO 224 px", parent_run_id=a["run_id"])
+    wait(b["run_id"], s2)
+    row = ledger.runs()[b["run_id"]]
+    va = runs._primary_val(ledger.runs()[a["run_id"]])
+    check(f"known-better pair kept at R = {s2.R} min", row.get("outcome") == "kept",
+          f"val {va} -> {runs._primary_val(row)}, z {row.get('z_vs_incumbent')}, noise {row.get('noise')}")
+    settle(s2)
+
+
 def gate_noise():
     # three seeds of one recipe: A (agent), A' (harness), seed 3 (agent, same recipe)
     s = new_session("seeds", 15)  # R = 1.5 min
@@ -113,12 +129,12 @@ def gate_noise():
     wait(c3["run_id"], s)
     row = ledger.runs()[c3["run_id"]]
     check("seed 3 within noise of seed 1 (sigma from seeds 1-2)", row.get("outcome") == "within_noise",
-          f"outcome {row.get('outcome')}, z {row.get('z_vs_incumbent')}, sigma_seed {row.get('sigma_seed')}")
+          f"outcome {row.get('outcome')}, z {row.get('z_vs_incumbent')}, noise {row.get('noise')}")
     for rid in (a["run_id"], c3["run_id"]):
         r = ledger.runs()[rid]
         m = r["metrics"]
         check(f"{rid} stops within R with lr < 5% of peak",
-              r["charged_min"] <= s.R + 0.05 and (m.get("lr_final_fraction") or 1) < 0.05,
+              r["charged_min"] <= s.R + 0.05 and m.get("lr_final_fraction", 1) < 0.05,
               f"charged {r['charged_min']} of R {s.R}; lr fraction {m.get('lr_final_fraction')}; "
               f"startup {m.get('startup_s')} s; val pass {m.get('val_pass_s')} s; stopped by {m.get('stopped_by')}")
     # known-better pair
@@ -165,7 +181,8 @@ def gate_startup():
 
 if __name__ == "__main__":
     which = sys.argv[1] if len(sys.argv) > 1 else "all"
-    for name, fn in (("cache", gate_cache), ("faults", gate_faults), ("startup", gate_startup), ("noise", gate_noise)):
+    for name, fn in (("cache", gate_cache), ("faults", gate_faults), ("startup", gate_startup), ("noise", gate_noise),
+                     ("better", gate_better)):
         if which in (name, "all"):
             fn()
     out = WORKSPACE / f"gate7-{which}.json"

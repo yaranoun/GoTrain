@@ -102,6 +102,19 @@ Records:
 | `outcome` | Decision runs (done, stage `train`, agent): `first` \| `kept` \| `within_noise` \| `regressed`, with `incumbent_before`, `z_vs_incumbent` and `noise {delta, sd_boot, sigma_seed, sigma, z}` as computed at that moment. Other rows: `failed`, `killed`, or the stage name (`screen`, `seed_repeat`, `level2`); these are never compared. |
 | `failure_reason` | `non-finite loss`, `no progress`, `over cap` (still alive max(1 min, R/4) past its cap), `process exited`, `crashed` |
 
+**Level 2 rows (Step 12, `gotrain/level2.py`, run by code in the level2 phase):**
+- **Composites** (`mechanism: tta|ensemble`):
+  - `launched_by: harness`, `status: done`, `run_cap_min: null`, `charged_min` = GPU wall minutes of their
+    evaluation;
+  - `parents: [{run_id, checkpoint_sha256, tta}]`, `generation: 0`, `promoted: bool`, and
+    `noise: {vs, delta, sd, z}` (the bootstrap alone);
+  - files: `composite.json` and `val_stats.npz` in `runs/<task>/<task>-L2-NNN/`.
+- **The trained slot:** a normal launch with stage `level2` and cap R, from the P2 pot.
+- **Incumbent:** the latest promoted composite is the session's incumbent, and `finalize` tests it (the vault entry
+  lists `members`).
+- **Records:** a `{"type": "level2", session_id, summary}` record goes to sessions.jsonl. The pot check counts
+  every `level2` row against P2.
+
 **Harness behaviour (Step 7):**
 - **When A′ is launched:** `runs.harness_step(session)` launches A′ when the GPU is idle, the session's first
   decision run is done, Level 1 is open and P1 ≥ R. It is called only right before the agent's next launch (that
