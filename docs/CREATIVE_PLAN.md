@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| Status | **Approved by Aya on 31 Oct 2026**, including the recommended defaults in §3.2. Still to settle: the deadline and logistics (§10 item 10) and whether a second coding session is used (§10 item 6). Next: the build agent reviews this plan against the latest `origin/main`, then starts with Step 5 (amended) and Step 6. |
+| Status | **Approved by Aya on 31 Oct 2026**, including the recommended defaults in §3.2. **Amended the same evening with option C** from Aya's review of eight extra ideas (§12): small additions before the freeze (Steps 6–9) and at report time (Step 14). Still to settle: the deadline and logistics (§10 item 10) and whether a second coding session is used (§10 item 6). Next: the build agent reviews this plan against the latest `origin/main`, then starts Step 6 (interfaces first). Step 5 (amended) goes to the second session, or to a teammate if the build agent works alone (§7.2). |
 | Code baseline | `origin/main` @ `82b8860`. Steps 0–4 are done; Step 5 (baselines) has not started and is amended here (§6). |
 | Continues | `docs/PLAN.md`. Step numbers continue from Step 5. |
 | Deadline | T = 1 Nov 2026, `__:__` Beirut. **To confirm with the organisers.** Times below are relative to the approval time N, the freeze F1, or T. |
@@ -75,6 +75,8 @@ GoTrain is one agent, driven by one system prompt that names no dataset. It trai
 7. Tool docstrings name m-eurosat, and the prompt describes a finalize policy that this plan replaces.
 8. **There are no playbook tools and no loader for m-SA-crop-type.** The float32 cache loads whole splits into RAM. SA-crop would need ≈ 10.2 GB for train (3000 × 13 × 256 × 256 × 4 B) plus ≈ 3.4 GB for val: ≈ 13.6 GB on a 15 GB machine.
 9. `.gitignore` ignores `*.npz`, so per-sample val outputs would never be committed.
+10. Nothing stops a run whose loss turns non-finite or that stops making progress, other than the time cap.
+11. Tool text and images are not size-capped. The 8-minute dry run already used 174k input tokens over 24 tool calls (*measured*).
 
 ---
 
@@ -142,7 +144,20 @@ The score is z = Δ/σ. **z ≥ 2 is kept, z ≤ −2 is a regression, and anyth
 - `final_test` refuses if the task has a **non-voided** `opened` or `done` line. Voided lines do not count, so m-eurosat keeps its one legitimate test touch.
 - `final_test` appends `opened` before reading test and `done` after writing the vault.
 - After each finalize, the chain commits a copy to `workspace/test_registry.jsonl`.
+- `final_test` also writes `workspace/runs/<task>/<run_id>/test_stats.npz` in the finalized run's (or composite's) directory. Confidence intervals can then be computed later without touching test again.
+  - **Contents:** sample ids and group keys, plus labels and probabilities (classification) or per-image confusion matrices with the ignore class dropped (segmentation).
+  - **Size and integrity:** compressed and under 1 MB. It is written before the vault append, and its sha256 is stored in the vault entry.
+  - **Never read by any agent tool**, and never rebuilt (that would be a second test touch).
 - No gate ever reads a real test split; guards are tested only with a synthetic pytest.
+
+**Sentinel (minimal, in the harness).** It watches only training subprocesses started by `runs.launch`, never evaluation, TTA, Level 2 inference or `final_test`.
+- **Heartbeat.** `train.py` writes a heartbeat (phase `startup` / `train` / `val`, step, time) at every phase change and at least every 30 s.
+- **Divergence.** A run is stopped if its loss is non-finite for 10 consecutive steps, or its epoch mean is non-finite. Isolated non-finite steps are left to the mixed-precision scaler.
+- **Hang.** A run is killed only in phase `train`, after its first step, when no step completes for min(3 min, R/2). Startup is bounded by R alone.
+- **Outcome.** Either way the run ends `failed`, with the reason in its ledger row. A failed run is never the incumbent or the "best", never triggers A′, and is never lesson evidence or a Level 2 member, whatever partial metrics it has. Every run is charged its launch-to-exit wall minutes, whatever its status.
+- **Seed repeat fails.** If A′ fails, the harness relaunches it once. If it fails again, σ uses the bootstrap alone and the session records `sigma_seed: null`.
+- **Audit.** After the chain, a **Sentinel audit** over the ledger and the training histories flags overfitting and suspicious score jumps in the report (Step 14).
+- It is deterministic code, never an LLM, so its own decisions can be checked.
 
 **One GPU job, machine-wide.** `SequentialToolExecutor` in `agent.py`, plus a lock file in `$GOTRAIN_STATE_DIR`. A held lock means refused, never wait. This covers main, sandbox and control-arm workspaces, which protects the 15 GB of RAM.
 
@@ -182,6 +197,8 @@ The score is z = Δ/σ. **z ≥ 2 is kept, z ≤ −2 is a regression, and anyth
 
   Anything not finished by F1 is dropped. Nothing is added mid-chain.
 
+  An `indices` knob (NDVI / NDWI / NDBI channels computed from band roles) is **not** built before F1; it is post-hackathon work (§12). It is built only if Aya adds it explicitly before Step 8 starts. It then becomes optional knob 0, ahead of EMA, and F1 moves ≈ +1 h, with §7.2 and §7.3 recomputed.
+
 ### 4.4 Level 2 — models improve on models (per dataset, pot P₂)
 
 Every dataset follows the same sequence:
@@ -216,7 +233,8 @@ Level 2 never trains on val.
 |---|---|
 | `statement`, `intended_scope` | LLM (plain language) |
 | `intervention`, `baseline` (the config change, e.g. `{"weights": "ssl4eo_moco"}`) | code, copied from the evidence pair |
-| `evidence_scope`, from `tasks.py`:<br>• task type: classification / segmentation<br>• sensor family: S2 multispectral / aerial RGB / S1+S2<br>• band family: multispectral / RGB<br>• GSD bucket: ≤ 1 m / 10 m / > 10 m | code |
+| `evidence_scope`, from `tasks.py`:<br>• task type: classification / segmentation<br>• sensor family: S2 multispectral / aerial RGB / S1+S2<br>• band family: multispectral / RGB<br>• GSD bucket: ≤ 1 m / (1, 10] m / > 10 m<br>A feature that cannot be derived is `unknown`. | code |
+| `context`: empty if, and only if, the evidence pair's change touches the `backbone` or `weights` key. Otherwise it is the pair's weights family (scratch / ImageNet / EO-pretrained), from a new `family` field in the model zoo; for segmentation, the encoder's weights. Changes to `img_size`, `norm` or `band_fill` therefore carry a context. | code, from the evidence pair |
 | `tests[]`: per dataset `{pairs, Δ, σ, z, outcome}` | code |
 | `status` (`lead` / `hypothesis` / `confirmed` / `contradicted`), `confidence`, `times_applied`, `born_on` | code |
 
@@ -237,22 +255,34 @@ Level 2 never trains on val.
 
 | Bucket | Rule |
 |---|---|
-| **apply** | `hypothesis` or `confirmed`, with sensor family, band family, GSD bucket and task type all matching |
+| **apply** | `hypothesis` or `confirmed`, with sensor family, band family, GSD bucket and task type all matching, and `context` empty or equal to W (below) |
+| **other context** | in scope, but `context` ≠ W. Listed with its context and counted separately; never applied and never chosen for A⁺ |
 | **to test** | sensor family, band family and GSD bucket match but the task type differs, or a matching lead |
 | **avoid** | `contradicted` and in scope |
 | **hidden** | shown only as a logged count. This is the scoping evidence (e.g. Sentinel-2 lessons hidden on aerial pv4ger-seg) |
 
 Within a bucket, lessons are ranked by confidence × similarity of profile features (number of training images, classes, image size, imbalance). This follows Auto-sklearn's nearest-dataset idea.
 
+"To test" and A⁺ consider only lessons with an empty `context` or a `context` equal to W.
+
+**Unknown scope.** This is the general fallback for data outside the known sensors.
+- **Wildcard.** `unknown` acts as a wildcard on the unknown feature(s) only. A lesson whose *known* features match goes to "to test", never "apply".
+- **Never applied.** A lesson whose own scope contains `unknown` is never applied anywhere, including on another unknown dataset.
+- **Chain tasks.** None of the chain's datasets may have an unknown feature. `run.py --arm main` exits if a chain task's scope contains `unknown`, and the session header records the scope.
+
 **Applying and re-testing.**
-- `compose_config` merges the "apply" lessons onto the defaults. The result is **A**.
+- **`compose_config` merges the "apply" lessons onto the defaults in two passes.**
+  - **Pass 1** applies the lessons with an empty `context`, in rank order. These settle the backbone and weights. A lesson that touches a key already set by a higher-ranked one is skipped. The resulting weights family is **W** (the defaults' family if nothing applies).
+  - **Pass 2** applies the lessons whose `context` equals W.
+  - After each lesson, `validate_config` runs. A lesson that makes the config invalid (e.g. `band_fill` without EO weights) is dropped and logged `not_applicable`.
+  - The result is **A**. `retrieve` runs pass 1 itself to know W before it sorts the buckets. If the agent drafts A itself, retrieval is re-run on that draft before A± is built.
 - Code also builds the re-test partner, which is a normal Level 1 step and a lesson test at the same time:
-  - **A⁻** = A without the applied lesson with the most at stake (largest |effect| × (1 − confidence));
+  - **A⁻** = A without the applied lesson with the most at stake (largest |effect| × (1 − confidence)). Code removes that lesson's keys. It also removes same-group lessons whose `context` no longer matches (e.g. `band_fill`, `img_size`, `norm` when the weights change). Lessons in other knob groups are held fixed, so A and A⁻ still differ in one knob group. If A⁻ is invalid, the next lesson by stake is used;
   - **A⁺** = A plus the top "to test" lesson, used when nothing applies.
 
 **Status rules (code).**
 - **Sign.** z is signed in the lesson's direction. A negative lesson ("X hurts") is applied by keeping its baseline value.
-- **One test.** z ≥ 2 confirms, z ≤ −2 refutes, and anything else is inconclusive. Inconclusive results are recorded but not counted.
+- **One test.** z ≥ 2 confirms, z ≤ −2 refutes, and anything else is inconclusive. Inconclusive results are recorded but not counted. A pair counts for a lesson only if the pair's weights family equals the lesson's `context` (or the context is empty); otherwise it is recorded as `out_of_context` and not counted.
 - **Birth and leads.** Birth counts as one confirmation for a hypothesis and none for a lead. A lead becomes a hypothesis at its first confirmation.
 - **Confirmed.** Confirmations on ≥ 2 datasets (birth included), with no refutation in scope.
 - **On a refutation.** If refutations ≥ confirmations, the lesson becomes `contradicted`. Otherwise the dataset is recorded as an exception and `evidence_scope` is narrowed to the confirming datasets' features.
@@ -274,6 +304,7 @@ Within a bucket, lessons are ranked by confidence × similarity of profile featu
 
 - **Prompt.** The system prompt lives in `gotrain/prompts/system.md`. A hygiene test fails on task ids, class names, sensor names, band ids, GSD values or score-like decimals. Tool docstrings use neutral placeholders.
 - **Isolation.** Every tool is bound to the session's task, so the playbook is the only channel between datasets. Profile notes are cleared at session start, and baselines are hidden from the agent.
+- **No hand-written lessons.** The playbook is never seeded by hand (§12). It persists across datasets and sessions, and after the hackathon GoPilot inherits it as its starting point.
 - **Hold-out.** No agent session or training touches #5 or its fallback before the chain. Engine defaults and the model zoo are frozen at F1.
 - **Check.** `verify` confirms that every lesson predates its dataset's non-voided test touch (its vault entry). INC-001 predates all lessons and is disclosed.
 
@@ -379,15 +410,15 @@ We report the result, whatever it is.
 | Step | What | Est. | Gate |
 |---|---|---|---|
 | **5 (amended)** | `gotrain/baselines.json` from the GEO-Bench CSVs. Read only by report and model-card code; no agent tool reads it. | 0.5 h | References match §2.2. No tool docstring or output mentions them. |
-| **6** | **Harness hardening** | 2 h | See below. |
-| **7** | **Fixed run budget, noise gate, cache v2** | 3.5 h | See below. |
-| **8** | **Level 3 playbook** | 3 h | See below. |
-| **9** | **Dataset #5 and fallback loaders**, after Step 7's cache lands | 1.5 h | SA-crop true colour looks natural. Peak RAM < 12 GB. No SA-crop or nz-cattle row exists in any ledger. |
+| **6** | **Harness hardening**, including smaller agent context | 3 h | See below. |
+| **7** | **Fixed run budget, noise gate, cache v2, Sentinel kill** | 4 h | See below. |
+| **8** | **Level 3 playbook**, including lesson `context` and unknown-scope fallback | 4 h | See below. |
+| **9** | **Data-state detector** (code can start at once), then **dataset #5 and fallback loaders** (after Step 7's cache lands) | 0.75 h + 1.5 h | The detector classifies channels as expected (see below). SA-crop true colour looks natural. Peak RAM < 12 GB. No SA-crop or nz-cattle row exists in any ledger. The scope of m-SA-crop-type is (segmentation, S2 multispectral, multispectral, (1, 10] m), and of m-nz-cattle (segmentation, aerial RGB, RGB, ≤ 1 m); neither is `unknown`. |
 | **10** | **Session verify, smoke test, freeze F1** | 1.5 h | See below. |
 | **11** | **GPU chain** (unattended, `nohup`, branch `run/chain`) | ≈ 8.5 h at B = 60 | Session verify passes after each dataset. 5 vault entries. The A/B curves are drawn from the two ledgers. |
-| **12** | **Level 2**, built on `main` while Step 11 runs | 4 h + 2 h student | CPU unit tests on synthetic arrays during the chain. GPU dress rehearsal in the sandbox slot after #5 OFF. The composite re-scores identically. The synthetic pytest writes a vault entry listing member hashes. |
+| **12** | **Level 2**, built on `main` while Step 11 runs | 4 h + 2 h student | CPU unit tests on synthetic arrays during the chain. GPU dress rehearsal in the sandbox slot after #5 OFF. The composite re-scores identically. The synthetic pytest writes a vault entry listing member hashes, plus a composite `test_stats.npz` whose hash is in that entry. |
 | **13** | **Production layer** | 3 h (2 h reduced) | MCP Inspector lists the tools. The client fetches a model card (a synthetic one until the first finalize). `doctor` reports a working backend. |
-| **14** | **Reports, full verify, submission** | 2 h + final hours | Two full `verify` runs on the frozen ledger give identical output. The attribution check prints nothing. |
+| **14** | **Reports, full verify, submission**, including test-score confidence intervals and the Sentinel audit | 2.5 h + final hours | Two full `verify` runs on the frozen ledger give identical output. The attribution check prints nothing. |
 
 **Step 6 — Harness hardening.**
 - `SequentialToolExecutor` in `agent.py`.
@@ -400,7 +431,15 @@ We report the result, whatever it is.
   - `level2` and `finalize` require a session id whose `level1` is complete;
   - `--dry-run` is allowed only in a sandbox.
 - **Prompt:** moves to `gotrain/prompts/system.md`, with the hygiene test. Tool docstrings are neutralised, and profile notes are cleared at session start.
-- **`.gitignore`:** gains `*.npy` and `*.tmp`, plus the exceptions `!workspace/runs/**/val_stats.npz` and `!experiments/**/val_stats.npz`, placed after `*.npz`.
+- **`.gitignore`:** gains `*.npy` and `*.tmp`, plus the exceptions `!workspace/runs/**/val_stats.npz`, `!experiments/**/val_stats.npz` and `!workspace/runs/**/test_stats.npz`, placed after `*.npz`.
+- **`final_test` writes `test_stats.npz`** in the finalized run's directory, as specified in §4.2: ids and groups, compressed, under 1 MB, sha256 in the vault entry. No agent tool reads it.
+- **Smaller agent context** (idea 8, §12):
+  - Cap tool text at about 2,000 characters. **Exempt:** `list_backbones`, `read_playbook`, `compose_config`, `mine_effects` and `query_ledger`.
+    - `read_playbook` and `mine_effects` show one line (≤ 200 characters) per lesson or effect: id, status, confidence, intervention, z. They paginate in a fixed rank order ("page i/n"), with full text via `read_playbook(lesson_id=…)`.
+    - `query_ledger` is limited by `top_k`, never cut mid-row.
+  - Downscale images to a long side of ≤ 1,024 px.
+  - Keep only the latest image of each kind (tool + image title) in the conversation, where Strands allows it; otherwise rely on the sliding window.
+  - Split the token counts in the `session_end` record, which `run.py` already writes, into input and output.
 - **Gate:**
   - two parallel launches give one run and one refusal;
   - a launch from another workspace while the lock is held is refused;
@@ -409,7 +448,10 @@ We report the result, whatever it is.
   - every run-id tool refuses another task's run;
   - a fresh m-eurosat session shows 0 GPU-min used and no incumbent;
   - the hygiene test passes;
-  - `git check-ignore` does not ignore a run's `val_stats.npz`.
+  - `git check-ignore` does not ignore a run's `val_stats.npz` or `test_stats.npz`;
+  - the synthetic pytest writes `test_stats.npz` at the run path with the specified keys, and its hash is in the temporary vault entry;
+  - `read_playbook` over 20 synthetic lessons and `mine_effects` over 15 pairs expose every id across their pages; `list_backbones` on m-brick-kiln is complete;
+  - a sandbox session respects the text and image caps, and its `session_end` record has input and output token counts.
 
 **Step 7 — Fixed run budget, noise gate, cache v2.**
 - **Budget:**
@@ -426,7 +468,12 @@ We report the result, whatever it is.
   - a per-sample ids file for bootstrap groups;
   - conversion to float32 per batch.
 - `show_tree` (text and PNG).
+- **Sentinel kill** (idea 7, §12), exactly as in §4.2: heartbeat, divergence stop, hang kill, failed-run handling, launch-to-exit charging, A′ relaunch.
+- **Fault hook for gates:** `GOTRAIN_FAULT=nan_loss|stall`, honoured only in a sandbox. `validate_config` keeps `lr ≤ 1.0`.
 - **Gate:**
+  - with `GOTRAIN_FAULT=nan_loss`, a sandbox run ends `failed` with reason "non-finite loss": no incumbent change, wall minutes charged;
+  - with `GOTRAIN_FAULT=stall`, a sandbox run ends `failed` with reason "no progress";
+  - a run launched while its cache is still being built is not killed;
   - three seeds of one recipe, with σ from seeds 1–2, put seed 3 within noise of seed 1;
   - a known-better pair is kept: eurosat ResNet18 ImageNet 64 px against ResNet18 SSL4EO 224 px (96.4% vs 98.9% val in the dry run);
   - a run stops within R with the learning rate below 5% of its peak;
@@ -437,13 +484,35 @@ We report the result, whatever it is.
 - `gotrain/playbook.py`: `mine_effects`, `add_lesson`, `record_tests`, `retrieve`, `compose_config` (including A±), `update_status`, `snapshot`.
 - `gotrain/tools/memory.py`: `read_playbook`, `compose_config`, `mine_effects`, `add_lesson`, `request_knob`.
 - A reflect phase in `run.py`: fresh context, no vault access.
+- The lesson `context` field and the two-pass `compose_config` (idea 3, §12), plus the unknown-scope fallback (idea 2).
 - **Gate:**
   - unit tests on a synthetic ledger cover every status rule in §4.5;
-  - on the four real tasks, eurosat lessons land in "apply" for brick-kiln, in "to test" for cashew (producing an A⁺), and are hidden on pv4ger-seg;
+  - a lesson born from two ImageNet-weights runs has context "ImageNet": it lands in "other context", not "apply", when W is EO-pretrained;
+  - a synthetic `band_fill` lesson is not applied when A uses ImageNet weights, and A stays valid;
+  - a synthetic playbook {SSL4EO weights lesson, EO-context `band_fill` lesson, EO-context `lr` lesson} gives a valid A⁻ that differs from A in one knob group;
+  - an out-of-context pair is recorded `out_of_context` and not counted;
+  - on a synthetic dataset with an unknown sensor, matching lessons appear in "to test", never "apply"; a lesson born there is not applied on a second unknown dataset;
+  - on the four real tasks, eurosat lessons with an empty context (or a context equal to brick-kiln's W) land in "apply" for brick-kiln, in "to test" for cashew (producing an A⁺), and are hidden on pv4ger-seg;
   - manual and operator rows are rejected as evidence;
   - an empty playbook behaves exactly like OFF.
 
-**Step 9 — Dataset #5 and fallback loaders.**
+**Step 9 — Data-state detector, then dataset #5 and fallback loaders.**
+- **Data-state detector** (idea 4, §12).
+  - **Reading the data.** It reads every on-disk channel through a new `load_split(task, "train", raw_channels=True)`. That call keeps the train/val guard and skips the `CHANNELS` permutation. The detector never opens the raw folder or the test partition.
+  - **Classification by scale, not by integer-ness**, tested in this order:
+    1. **mask-like:** ≤ 16 distinct values, or ≥ 50% of values exactly 0;
+    2. **already normalised:** negative values present, |mean| < 1 and std ≈ 1;
+    3. **reflectance 0–1:** max ≤ 2;
+    4. **8-bit:** max ≤ 255 and p99 ≥ 100;
+    5. **otherwise reflectance ×10⁴.** An `integer` flag is reported separately. A channel whose own range is ambiguous takes the majority state of its file.
+  - **Output.** It adds the per-channel `value_state` and a `suggested_norm` to the profile, and `profile_dataset` shows both to the agent.
+  - **Norm in the chain.** The default norm still comes from the model zoo (`norm=None`). The agent may override it with the existing `norm` key (part of the backbone/weights knob group). Code never applies `suggested_norm` automatically; that comes later, with the dataset adapter.
+  - **Timing.** The code can be built at once and tested on #1–#4. It runs on SA-crop only after cache v2 lands, under the machine-wide lock.
+- **Detector gate:**
+  - eurosat and brick-kiln Sentinel-2 bands, including eurosat's B10, are detected as reflectance ×10⁴, with no band names used;
+  - brick-kiln's TCI channels are detected as 8-bit;
+  - cashew's and SA-crop's cloud layers are detected as mask-like;
+  - a pytest asserts that no test-partition sample is opened, and that `load_split(..., "test", raw_channels=True)` raises.
 - Download m-SA-crop-type and m-nz-cattle.
 - `tasks.py` entries: `CHANNELS` fingerprinted on the Hugging Face v1.0 files (as was done for brick-kiln), `BAND_ROLES`, class names, and `IGNORE_INDEX = 0` for SA-crop.
 - Timings and peak RAM from a dry epoch that reads no labels and keeps no weights, run while nothing else uses the instance.
@@ -453,7 +522,8 @@ We report the result, whatever it is.
 - A full sandbox session on m-eurosat with B = 10. `finalize` is refused there by design. It measures per-run overhead, per-session overhead and the finalize reserve.
 - Choose B by §7.3.
 - Commit `PROTOCOL.md` and `analyze.py` (unit-tested on a synthetic two-ledger fixture).
-- Re-run the dry-run allow check, tag `freeze-f1`, and switch the instance checkout to `run/chain`.
+- Re-run the dry-run allow check, and check that every chain task's scope contains no `unknown`.
+- Tag `freeze-f1`, and switch the instance checkout to `run/chain`.
 - `scripts/chain.sh`:
   - works from a queue file in `$GOTRAIN_STATE_DIR` and is resumable;
   - honours a `PAUSE` marker and logs to `logs/chain.log`;
@@ -469,7 +539,7 @@ We report the result, whatever it is.
     - dry-run allow check passed;
     - rung computed by the §7.3 formula.
 
-**Step 11 — GPU chain.** The queue:
+**Step 11 — GPU chain.** Before each dataset's first session, a `build_cache <task>` queue item builds its train/val cache. It runs outside every pot, so no arm pays for cache building. The queue:
 1. #1–#4 Level 1 + reflect
 2. playbook snapshot
 3. #5 ON Level 1 + reflect
@@ -482,7 +552,8 @@ Session verify runs after each dataset, and a harness failure sets `PAUSE`. **Op
 
 **Step 12 — Level 2.**
 - `gotrain/level2.py`: probability cache keyed by checkpoint hash, TTA gate, ensemble, trained slot, composites, stop rule.
-- Composite support in `evaluate`, `final_test` and `finalize`.
+- Composite support in `evaluate`, `final_test` and `finalize`. The composite `final_test` writes `test_stats.npz` in the composite directory, with the same keys and vault hash as Step 6: averaged probabilities, or per-image confusion matrices of the ensemble's prediction. The Step 12 gate checks this.
+- The student's teacher probabilities are computed by `level2.py` before the student run is launched, not inside the watched training process.
 - `tools/generations.py`.
 - **Student decision at F1+3 h:** ship it in the deploy, or use the extra seed member on every dataset.
 - **Deploy** = merge the tagged Level 2 commit into `run/chain` after #5 OFF ends and the rehearsal passes. After the deploy, Level 2 and finalize code stay frozen until all five tasks are finalized; fixes are allowed only in report, verify, MCP and store code.
@@ -492,6 +563,7 @@ Session verify runs after each dataset, and a harness failure sets `PAUSE`. **Op
 - `gotrain/store.py`: `LocalStore` and `S3Store` behind one interface, chosen by `GOTRAIN_STORE`.
   - `doctor` checks identity, bucket, and put/get/delete.
   - `fetch` / `push <task>` covers datasets, logged with the zip sha256.
+  - `push` also covers checkpoints, the model registry and `workspace/playbook.jsonl`.
 - **Model registry** `workspace/registry.jsonl`: versions; tags `candidate` / `production` / `archived`; checkpoint sha256; `derived_from`.
 - `gotrain/model_card.py`: cards written entirely by code. The eurosat card includes INC-001.
 - `gotrain/mcp_server.py` over stdio:
@@ -504,12 +576,25 @@ Session verify runs after each dataset, and a harness failure sets `PAUSE`. **Op
 
 **Step 14 — Reports, full verify, submission.**
 - `gotrain/report`: per-task tree, lesson-flow graph, A/B curve with ±2σ, Level 2 view, results table, static `dashboard.html`.
+- **Test-score confidence intervals** (idea 1, §12).
+  - A 95% percentile-bootstrap interval for every test score: 10,000 resamples, seed 0, grouped where groups exist.
+  - Computed only from `test_stats.npz`, whose hash is checked against the vault first.
+  - Shown in the results table and the model cards. Cashew's test split is 50 images, so its interval will be wide; we say so.
+- **Sentinel audit** (idea 7), from the ledger and the training histories:
+  - it flags overfitting: the val primary metric falls for ≥ 3 consecutive epochs while train loss keeps falling (runs with ≥ 5 epochs);
+  - it flags suspicious jumps: z > 6 against the parent;
+  - each flag cites its run.
+- **Placeholder data** for building the report before results exist lives under `tests/fixtures/`, never in `workspace/`.
 - `gotrain/verify` (full):
   - the vault chain;
   - checkpoint and member hashes;
   - lessons predate each dataset's non-voided test touch;
   - the committed test-registry copy matches the vault, including the voided INC-001 line;
-  - model-registry checkpoint hashes match the vault.
+  - model-registry checkpoint hashes match the vault;
+  - **the playbook only ever grew** (idea 6). Along `git log --first-parent --reverse freeze-f1..run/chain -- workspace/playbook.jsonl`, each version is a prefix of the next, and the file is absent at `freeze-f1`. Every lesson's evidence run ids resolve to finished, agent-launched rows of one session in the committed ledger;
+  - no commit on `main` after `freeze-f1` touches `workspace/`;
+  - `test_stats.npz` hashes match the vault.
+- **Gate (additions):** two report runs give identical interval tables, and a synthetic training history triggers the overfitting flag.
 - **README:** pitch, quickstart, results with the INC-001 note, "trace a score", "plug into GoPilot".
 - Pinned requirements, a file-size check, the attribution check, the merge of `run/chain`, and the `submission` tag.
 
@@ -541,27 +626,29 @@ Session verify runs after each dataset, and a harness failure sets `PAUSE`. **Op
 
 | Window | Build agent | Second session | Instance / GPU | Team |
 |---|---|---|---|---|
-| N → N+2 h | Step 6 (interfaces first) | Step 5; Step 8 against the Step 6 interfaces | Download #5 and fallback; `df -h` | Ask the organisers for T and the slot; slide skeleton |
-| N+2 → N+6 h | Step 7 | Step 8 (cont.); `analyze.py`; session verify | Sandbox gates | Story, lesson-card design |
-| N+6 → N+7.5 h | Merge patches; Step 10 → **F1** | Step 9 (after Step 7 lands) | Step 9 dry epochs; smoke test | Go / no-go |
+| N → N+3 h | Step 6 (interfaces first) | Step 5; Step 8 against the Step 6 interfaces | Download #5 and fallback; `df -h` | Ask the organisers for T and the slot; slide skeleton |
+| N+3 → N+7 h | Step 7 | Step 8 (cont.); `analyze.py`; session verify; data-state detector code (tested on #1–#4) | Sandbox gates | Story, lesson-card design |
+| N+7 → N+8.75 h | Merge patches; Step 10 → **F1** | Step 9 loaders and the detector run on SA-crop (after Step 7 lands) | Step 9 dry epochs; smoke test | Go / no-go |
 | F1 → F1+6 h | Step 12 | Step 13, then Step 14 on placeholder data | Chain: #1–#4, #5 ON, #5 OFF | Read transcripts; slides on real data |
 | F1+6 → F1+8.5 h | Fixes in report/verify/MCP/store only | Step 14 on real data | Replays, rehearsal, deploy; Level 2 + finalize #1–#5; publish | Results slides |
 | T−3 h | Final report render; README | — | — | Slides locked; demo recorded |
 | T−1.5 h | Final push; `submission` tag | — | — | Two timed rehearsals |
 
 **With the build agent alone:**
-- F1 moves to ≈ N+10 h: Steps 6, 7, 8 and 10 run in sequence, and a teammate runs Steps 5 and 9.
+- F1 moves to ≈ N+12.5 h: Steps 6, 7, 8 and 10 run in sequence, and a teammate runs Steps 5 and 9 (including the detector).
 - After F1:
   - Step 12 runs F1 → F1+4 h; the student is dropped unless it is ahead of schedule;
   - Step 13 (reduced) runs F1+4 → F1+6 h;
   - Step 14 runs F1+6 → F1+8.5 h.
 
-**Worked example (approval at 19:00 on 31 Oct):**
+**Worked example (build starts at N = 19:00 on 31 Oct):**
 
 | | F1 | Chain ends | B = 60 fits if T ≥ |
 |---|---|---|---|
-| Two sessions | ≈ 02:30 | ≈ 11:00 | ≈ 14:00 on 1 Nov |
-| One build agent | ≈ 05:00 | ≈ 13:30 | ≈ 16:30 on 1 Nov |
+| Two sessions | ≈ 03:45 | ≈ 12:15 | ≈ 15:15 on 1 Nov |
+| One build agent | ≈ 07:30 | ≈ 16:00 | ≈ 19:00 on 1 Nov |
+
+Option C (§12), with the safeguards added in its review, adds ≈ 1.25 h before the freeze with two sessions (≈ 2.5 h with one build agent). Without it, the times were 02:30 / 11:00 / 14:00 and 05:00 / 13:30 / 16:30.
 
 ### 7.3 Scope ladder (computed once at F1; never changed mid-chain; the same on every dataset)
 
@@ -574,7 +661,7 @@ Session verify runs after each dataset, and a harness failure sets `PAUSE`. **Op
 |---|---|---|---|---|
 | ≥ 11.5 h | 60 | 45 / 15 | 6 min | Full |
 | ≥ 10.1 h | 45 | 33.75 / 11.25 | 4.5 min | Full |
-| ≥ 8.6 h | 30 | 22.5 / 7.5 | 3 min | Full |
+| ≥ 8.65 h | 30 | 22.5 / 7.5 | 3 min | Full |
 | ≥ 7.7 h | 20 | 15 / 5 | 2 min | Full (weaker models; Aya pre-approves) |
 | < 7.7 h | — | — | — | Aya decides at F1 between three options, each disclosed: B = 20 without the trained slot; #5 replaced by fallback rung 3; the A/B shown as a design only. |
 
@@ -583,11 +670,16 @@ Session verify runs after each dataset, and a harness failure sets `PAUSE`. **Op
 1. Stretch dataset (so2sat), planning replays.
 2. The distilled student (an extra seed member takes its place).
 3. Dashboard polish (keep the PNGs).
-4. The live-demo segment (keep the recording).
-5. The real S3 backend (keep `LocalStore` and a slide; the brief accepts a file system).
-6. MCP `train_model` jobs (keep the read-only MCP server).
-7. Optional knobs.
-8. A lower B (only at F1, by the ladder).
+4. Option C extras, in this order:
+   1. the Sentinel audit;
+   2. the data-state detector (keep the cloud-layer check by hand);
+   3. dropping old images from the conversation (keep the caps);
+   4. the unknown-scope fallback (keep the rule "unknown → never apply").
+5. The live-demo segment (keep the recording).
+6. The real S3 backend (keep `LocalStore` and a slide; the brief accepts a file system).
+7. MCP `train_model` jobs (keep the read-only MCP server).
+8. Optional knobs.
+9. A lower B (only at F1, by the ladder).
 
 **Never cut:**
 - ≥ 4 finalized test scores with logs;
@@ -597,7 +689,9 @@ Session verify runs after each dataset, and a harness failure sets `PAUSE`. **Op
 - the with/without comparison (via the ladder);
 - the top-3 ensemble with the TTA gate;
 - a read-only MCP server;
-- `verify`.
+- `verify`;
+- `test_stats.npz` written by `final_test` (it can never be rebuilt);
+- the Sentinel kill (the chain runs unattended).
 
 ---
 
@@ -613,8 +707,8 @@ Every number on the slides comes from `python -m gotrain.report`.
 | 4 | Level 2: models built from models | Ensemble + generation-1 nodes with their gated gains |
 | 5 | Level 3: scoped lessons, re-tested | Lesson-flow graph and one lesson card shown large |
 | 6 | Evidence on a held-out dataset | With/without anytime curve, ±2σ, one-sentence measured caption |
-| 7 | Test scores, each traceable | Val, test, GEO-Bench reference with protocol flag, GPU-min, tokens |
-| 8 | Code writes the scores, not the LLM | Guards, vault chain, INC-001 timeline: found → voided → fixed → finalized again |
+| 7 | Test scores, each traceable | Val, test with its 95% interval, GEO-Bench reference with protocol flag, GPU-min, tokens |
+| 8 | Code writes the scores, not the LLM | The Sentinel and the other guards, vault chain, INC-001 timeline: found → voided → fixed → finalized again |
 | 9 | Plugs into GoPilot | GoPilot → MCP → GoTrain → store / registry |
 | 10 | What we would ship at RASID | The agent's logged knob requests, Level 2 roadmap, closing headline |
 
@@ -646,6 +740,8 @@ Every number on the slides comes from `python -m gotrain.report`.
 | Short fixed runs give weaker models than manual runs | Annealed schedule, ensemble, trained slot; a larger B if time allows |
 | SA-crop RAM, band order or timings | Memory-mapped integer cache, band fingerprint, dry epoch, fallback ladder |
 | Bedrock throttling or a session crash overnight | Resumable runner, queue `PAUSE`, operator fallback (logged and disclosed) |
+| A run diverges or hangs overnight | Sentinel kill on non-finite loss or no progress; the time cap R as a backstop |
+| Agent context grows and slows the chain | Capped tool output and images, with the playbook and ledger tools paginated rather than cut (Step 6); token counts in every `session_end` record |
 | Misleading baseline comparison | Protocol flags; class-0 handling stated; references never shown on val curves |
 | JupyterLab session expiry or instance restart | `nohup`; state on the persistent volume; ask the organisers for a new link |
 
@@ -653,12 +749,14 @@ Every number on the slides comes from `python -m gotrain.report`.
 
 ## 10. Decisions needed from Aya (by impact)
 
+**Decided on 31 Oct:** the plan (all recommended defaults), then option C for the eight extra ideas (§12).
+
 1. **Budget structure and ladder:** P₁ = 0.75·B, P₂ = 0.25·B, R = B/10, default B = 60, the same on every dataset (O4, §7.3). Also screen runs as the one exception to fixed R (O9).
 2. **Reflect before finalize, and code-chosen finalize** with the metric hidden from the agent (O5, O6). This changes CLAUDE.md's workflow order.
 3. **Dataset #5 = m-SA-crop-type**, with m-nz-cattle as fallback instead of m-pv4ger (O7).
 4. **Baselines hidden from the agent** (O8). This changes PLAN.md Step 5.
 5. **Level 2 set**, including the distilled student (O3).
-6. **Builders:** the build agent alone, or a second coding session (recommended; it moves F1 ≈ 2.5 h earlier).
+6. **Builders:** the build agent alone, or a second coding session (recommended; it moves F1 ≈ 3.75 h earlier).
 7. **Configs only; failure images visible** (O1, O2).
 8. **Positioning wording** in §4.7, now that HASTE and ML-Master 2.0 are known prior art.
 9. **Night-time go criteria** for F1 (Step 10 gate).
@@ -677,14 +775,34 @@ Every number on the slides comes from `python -m gotrain.report`.
 7. `profile.py`: whether `agent_notes` survive re-profiling.
 8. Tool docstrings that name m-eurosat (`explore.py`, `train.py`, `diagnose.py`).
 9. SA-crop and nz-cattle: only `TASKS` / `GSD_M` entries exist. Fingerprint the v1.0 band order before setting `CHANNELS`.
-10. Instance:
+10. Strands, on the installed version: how to strip older image blocks from the conversation (hooks or a conversation manager), for Step 6's context limits. Also `train.py`'s logging cadence: today it writes only once per epoch, so Step 7's heartbeat is new.
+11. Instance:
     - GPU model (`nvidia-smi`);
     - free disk on the persistent volume (`df -h`; target ≥ 40 GB free before F1);
     - installed `strands-agents` and `mcp` versions, then pin per Step 13.
 
 ---
 
-## 12. References
+## 12. Review of eight extra ideas (option C, decided 31 Oct)
+
+Aya proposed eight ideas after the plan was approved. Option C keeps the ones that must exist before the freeze and are cheap, moves report-time items after the freeze (no delay), and leaves the rest for later.
+
+| # | Idea | In option C | Later / not done | Where |
+|---|---|---|---|---|
+| 1 | Dataset size vs data errors | Evaluation side: the noise gate (already in the plan), plus 95% intervals on test scores | Flagging likely-mislabelled train samples (`show_suspects`) and a `drop_suspects` knob the agent could test. How strongly to handle noise on small datasets is learned through lessons (training-set size is a ranking feature), not a fixed formula. | Steps 6, 7, 14 |
+| 2 | Works on any dataset | Unknown-scope fallback: lessons are never applied automatically to an unknown sensor | A dataset adapter (folders of GeoTIFFs plus a small `dataset.yaml`: sensor, bands, resolution, nodata, ignore class) feeding the same cache, and an MCP demo on non-GEO-Bench data | Step 8; later: production layer |
+| 3 | Physics priors for small models | Lesson `context` (weights family). For example, "label smoothing 0.1 helps", learned with ImageNet weights, is applied only when A uses ImageNet weights. | `indices` knob (NDVI / NDWI / NDBI channels): post-hackathon, unless Aya adds it before Step 8 (+1 h) | Step 8; §4.3 |
+| 4 | Detect whether data is already processed | Data-state detector in the profile, with a suggested normalisation | Choosing the normalisation automatically (with the adapter) | Step 9 |
+| 5 | Any Hugging Face model | — (the model zoo stays fixed and frozen at F1, so datasets and arms stay comparable) | A `search_models` tool that checks channels, input size and parameter count, plus a smoke forward pass, before a model joins an extended zoo | Later: production layer |
+| 6 | The playbook persists | Already guaranteed (append-only, committed after each dataset, synced, served over MCP), plus a `verify` check that it only grows | Seeding the playbook by hand: **not done**, because it would break L2 and the with/without proof. GoPilot inherits our playbook after the hackathon instead. | Steps 11, 13, 14 |
+| 7 | Sentinel guard | Minimal, deterministic: kill on non-finite loss or no progress, plus an audit that flags overfitting and score jumps | A fuller Sentinel inside the harness, or an LLM-based guard | Steps 7, 14 |
+| 8 | Keep the agent's context small | Capped tool text, downscaled images, old images dropped, token counts logged | — | Step 6 |
+
+**Cost of option C**, including the safeguards added in its review: ≈ +1.25 h to the freeze with two coding sessions, ≈ +2.5 h with the build agent alone (§7.2).
+
+---
+
+## 13. References
 
 - GoTrain Challenge brief v1.0 (local PDF).
 - GEO-Bench: https://arxiv.org/abs/2306.03831 · https://github.com/ServiceNow/geo-bench (result CSVs at the repo root) · https://huggingface.co/datasets/recursix/geo-bench-1.0
