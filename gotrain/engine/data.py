@@ -14,7 +14,7 @@ import torch
 
 from gotrain import WORKSPACE
 from gotrain.engine.download import dataset_dir
-from gotrain.engine.tasks import CHANNELS, info
+from gotrain.engine.tasks import CHANNELS, CLASS_NAMES, info
 
 ALLOWED_SPLITS = {"train", "val"}
 GEOBENCH_SPLIT = {"train": "train", "val": "valid", "test": "test"}
@@ -70,7 +70,7 @@ def _load_arrays(task: str, split: str) -> dict:
     if perm is not None:
         d["x"], d["mean"], d["std"] = d["x"][:, perm], d["mean"][perm], d["std"][perm]
     d["channel_names"] = CHANNELS.get(task, {}).get("names", [f"C{i}" for i in range(d["x"].shape[1])])
-    d["classes"] = [str(c) for c in d["classes"]]
+    d["classes"] = CLASS_NAMES.get(task, [str(c) for c in d["classes"]])
     d["n_classes"] = int(d["n_classes"])
     return d
 

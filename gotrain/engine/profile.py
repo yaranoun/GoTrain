@@ -16,7 +16,7 @@ import numpy as np
 
 from gotrain import WORKSPACE
 from gotrain.engine.data import load_split
-from gotrain.engine.tasks import GSD_M, band_roles, info
+from gotrain.engine.tasks import GSD_M, band_roles, display_scale, info
 from gotrain.engine.viz import render, views
 
 MAX_CLASSES_SHOWN = 12
@@ -77,9 +77,9 @@ def profile(task: str, seed: int = 0) -> dict:
     for view, bands in views(names, roles).items():
         path = out / f"samples_{view}.png"
         if task_type == "segmentation":
-            _segmentation_grid(tr, names, roles, view, bands, path, rng)
+            _segmentation_grid(tr, names, roles, view, bands, path, rng, display_scale(task))
         else:
-            _classification_grid(tr, names, roles, view, bands, path, rng)
+            _classification_grid(tr, names, roles, view, bands, path, rng, display_scale(task))
         images.append(str(path))
     result["images"] = images
 
@@ -129,7 +129,7 @@ def _read(path: Path) -> dict:
     return json.loads(path.read_text()) if path.exists() else {}
 
 
-def _classification_grid(tr, names, roles, view, bands, path, rng) -> None:
+def _classification_grid(tr, names, roles, view, bands, path, rng, scale=None) -> None:
     """Columns = classes, rows = examples."""
     classes = list(range(min(tr["n_classes"], MAX_CLASSES_SHOWN)))
     fig, axes = plt.subplots(PER_CLASS, len(classes), figsize=(len(classes) * 1.3, PER_CLASS * 1.4 + 0.4),
@@ -141,7 +141,7 @@ def _classification_grid(tr, names, roles, view, bands, path, rng) -> None:
             ax = axes[row, col]
             ax.axis("off")
             if row < len(picks):
-                img, kw = render(tr["x"][picks[row]], names, roles, view, bands)
+                img, kw = render(tr["x"][picks[row]], names, roles, view, bands, scale)
                 ax.imshow(img, **kw)
         axes[0, col].set_title(tr["classes"][c], fontsize=7)
     fig.suptitle(f"{view} ({', '.join(bands) if isinstance(bands, list) else bands})", fontsize=9)
@@ -150,12 +150,12 @@ def _classification_grid(tr, names, roles, view, bands, path, rng) -> None:
     plt.close(fig)
 
 
-def _segmentation_grid(tr, names, roles, view, bands, path, rng) -> None:
+def _segmentation_grid(tr, names, roles, view, bands, path, rng, scale=None) -> None:
     """Row 1 = image, row 2 = label mask over the image."""
     picks = rng.choice(len(tr["x"]), min(SEG_SAMPLES, len(tr["x"])), replace=False)
     fig, axes = plt.subplots(2, len(picks), figsize=(len(picks) * 1.8, 4), squeeze=False, dpi=90)
     for col, i in enumerate(picks):
-        img, kw = render(tr["x"][i], names, roles, view, bands)
+        img, kw = render(tr["x"][i], names, roles, view, bands, scale)
         axes[0, col].imshow(img, **kw)
         axes[1, col].imshow(img, **kw)
         axes[1, col].imshow(np.ma.masked_equal(tr["y"][i], 0), cmap="tab10", alpha=0.5,

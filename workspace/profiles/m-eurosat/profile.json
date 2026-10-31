@@ -1,0 +1,164 @@
+{
+  "task": "m-eurosat",
+  "task_type": "classification",
+  "sensor": "sentinel-2",
+  "gsd_m": 10,
+  "n_bands": 13,
+  "band_names": [
+    "B01",
+    "B02",
+    "B03",
+    "B04",
+    "B05",
+    "B06",
+    "B07",
+    "B08",
+    "B8A",
+    "B09",
+    "B10",
+    "B11",
+    "B12"
+  ],
+  "band_roles": {
+    "red": "B04",
+    "green": "B03",
+    "blue": "B02",
+    "nir": "B08",
+    "swir1": "B11",
+    "swir2": "B12"
+  },
+  "img_shape": [
+    13,
+    64,
+    64
+  ],
+  "splits": {
+    "train": 2000,
+    "val": 1000
+  },
+  "classes": [
+    "Annual Crop",
+    "Forest",
+    "Herbaceous Vegetation",
+    "Highway",
+    "Industrial Buildings",
+    "Pasture",
+    "Permanent Crop",
+    "Residential Buildings",
+    "River",
+    "Sea and Lake"
+  ],
+  "band_stats": {
+    "B01": {
+      "mean": 1355.26,
+      "std": 248.44,
+      "p1": 975.0,
+      "p99": 2079.0
+    },
+    "B02": {
+      "mean": 1118.37,
+      "std": 326.89,
+      "p1": 706.0,
+      "p99": 2225.0
+    },
+    "B03": {
+      "mean": 1045.65,
+      "std": 380.45,
+      "p1": 462.0,
+      "p99": 2312.0
+    },
+    "B04": {
+      "mean": 936.14,
+      "std": 572.74,
+      "p1": 243.0,
+      "p99": 2813.0
+    },
+    "B05": {
+      "mean": 1198.26,
+      "std": 538.76,
+      "p1": 203.0,
+      "p99": 2754.0
+    },
+    "B06": {
+      "mean": 2035.5,
+      "std": 873.95,
+      "p1": 178.0,
+      "p99": 3969.0
+    },
+    "B07": {
+      "mean": 2415.51,
+      "std": 1109.0,
+      "p1": 156.0,
+      "p99": 4939.0
+    },
+    "B08": {
+      "mean": 2343.3,
+      "std": 1143.0,
+      "p1": 130.0,
+      "p99": 4874.0
+    },
+    "B8A": {
+      "mean": 2643.2,
+      "std": 1255.09,
+      "p1": 119.0,
+      "p99": 5383.0
+    },
+    "B09": {
+      "mean": 753.85,
+      "std": 426.02,
+      "p1": 58.0,
+      "p99": 1955.0
+    },
+    "B10": {
+      "mean": 12.15,
+      "std": 4.39,
+      "p1": 5.0,
+      "p99": 28.0
+    },
+    "B11": {
+      "mean": 1813.12,
+      "std": 973.61,
+      "p1": 22.0,
+      "p99": 4125.0
+    },
+    "B12": {
+      "mean": 1110.22,
+      "std": 742.15,
+      "p1": 11.0,
+      "p99": 3103.0
+    }
+  },
+  "nonfinite_values": 0,
+  "all_zero_pixel_fraction": 0.0,
+  "class_counts_train": {
+    "Annual Crop": 200,
+    "Forest": 200,
+    "Herbaceous Vegetation": 200,
+    "Highway": 200,
+    "Industrial Buildings": 200,
+    "Pasture": 200,
+    "Permanent Crop": 200,
+    "Residential Buildings": 200,
+    "River": 200,
+    "Sea and Lake": 200
+  },
+  "class_counts_val": {
+    "Annual Crop": 100,
+    "Forest": 100,
+    "Herbaceous Vegetation": 100,
+    "Highway": 100,
+    "Industrial Buildings": 100,
+    "Pasture": 100,
+    "Permanent Crop": 100,
+    "Residential Buildings": 100,
+    "River": 100,
+    "Sea and Lake": 100
+  },
+  "imbalance_ratio": 1.0,
+  "images": [
+    "/home/sagemaker-user/GoTrain/workspace/profiles/m-eurosat/samples_true_color.png",
+    "/home/sagemaker-user/GoTrain/workspace/profiles/m-eurosat/samples_false_color.png",
+    "/home/sagemaker-user/GoTrain/workspace/profiles/m-eurosat/samples_ndvi.png"
+  ],
+  "agent_notes": ""
+}

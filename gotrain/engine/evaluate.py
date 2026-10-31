@@ -18,7 +18,7 @@ from sklearn.metrics import confusion_matrix, f1_score
 
 from gotrain.engine.data import _load_arrays, load_split
 from gotrain.engine.models import build_model
-from gotrain.engine.tasks import band_roles
+from gotrain.engine.tasks import band_roles, display_scale
 from gotrain.engine.viz import composite, views
 from gotrain.engine.train import predict, resolve_config
 
@@ -136,7 +136,7 @@ def plot_failures(data, probs, task, path, n=16) -> None:
     for ax in axes.flat:
         ax.axis("off")
     for ax, i in zip(axes.flat, wrong):
-        ax.imshow(composite(data["x"][i], names, rgb))
+        ax.imshow(composite(data["x"][i], names, rgb, scale=display_scale(task)))
         ax.set_title(f"true: {data['classes'][y[i]]}\npred: {data['classes'][pred[i]]} ({probs[i, pred[i]]:.2f})",
                      fontsize=7)
     fig.tight_layout()

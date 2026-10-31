@@ -47,6 +47,25 @@ def band_roles(task: str) -> dict:
     return BAND_ROLES.get(task, {})
 
 
+# Sensor value shown at full brightness in composites (Sentinel-2 L1C reflectance * 10000).
+# A fixed scale keeps the true R:G:B ratios; the per-image percentile stretch subtracts an
+# offset that turns dark scenes (forest, water) blue from atmospheric haze in B02.
+# Tasks not listed fall back to a per-image percentile stretch.
+DISPLAY_SCALE = {"m-eurosat": 3000.0}
+
+
+def display_scale(task: str) -> float | None:
+    return DISPLAY_SCALE.get(task)
+
+# m-eurosat also stores class names in the wrong order: the integer labels follow the
+# original EuroSAT alphabetical order (verified visually: label 4 = industrial tanks,
+# label 8 = rivers, label 9 = water). Labels themselves are correct; only names are fixed here.
+CLASS_NAMES = {
+    "m-eurosat": ["Annual Crop", "Forest", "Herbaceous Vegetation", "Highway", "Industrial Buildings",
+                  "Pasture", "Permanent Crop", "Residential Buildings", "River", "Sea and Lake"],
+}
+
+
 def info(task: str) -> dict:
     if task not in TASKS:
         raise ValueError(f"Unknown task '{task}'. Known: {sorted(TASKS)}")
