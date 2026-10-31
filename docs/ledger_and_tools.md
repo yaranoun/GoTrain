@@ -411,6 +411,24 @@ arm off and dry runs, where lesson writes refuse). The snapshot is never written
 - Tested on `tests/fixtures/two_ledgers/` (`tests/test_analyze.py`); the fixture's `val_stats.npz` files are
   tracked (`.gitignore` exception).
 
+## Step 12 — Level 2 (31 Oct, built before the freeze)
+
+`gotrain/level2.py` runs by code in the `level2` phase. It uses no agent and no tokens; the plan's agent
+"hypothesis text" for Level 2 is dropped. It runs under the session lease and the GPU lock, in this sequence:
+1. **TTA gate:** per member, keep TTA only with z ≥ 2 against no TTA. The members are the top-3 finished decision
+   runs by val score, at most 2 per recipe.
+2. **Ensemble:** an equal-weight probability average. It is promoted only with z ≥ 2 against the incumbent
+   (bootstrap alone).
+3. **Trained slot:** an extra seed member of the best member's recipe. The distilled student is cut (cut list item
+   2); the plan's fallback slot is used on every dataset. It runs only if P2 ≥ R + the finalize reserve (the
+   incumbent's TTA val pass, measured in step 1). The ensemble including the slot is promoted with z ≥ 2.
+
+Composites are directories with `composite.json` (members, checkpoint sha256, TTA flags) and `val_stats.npz`,
+recorded as ledger rows with stage `level2`. The latest promoted composite is the incumbent. `final_test` runs a
+composite batch by batch: it checks every member's checkpoint hash before the registry's `opened` line, writes
+`test_stats.npz`, and lists the members in the vault entry. Because Level 2 is in the code at F1, both A/B arms
+run identical code, and no mid-chain deploy merge is needed (`chain.sh`'s `wait_deploy` item can be dropped).
+
 ## Session verify (31 Oct) — `python -m gotrain.verify`
 
 `GOTRAIN_WORKSPACE=<ws> python -m gotrain.verify --session <id> [--checks transcript,ledger,noise,pot]` prints one

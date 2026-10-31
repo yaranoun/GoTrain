@@ -358,6 +358,19 @@ def main() -> None:
                     tests = pb.record_tests(session)
                     ledger.append(sess.SESSIONS, {"type": "lesson_tests", "session_id": session.session_id,
                                                   "tests": tests, "time": _now()})
+            if phase == "level2" and not session.dry_run:  # Level 2 is code: no agent, no tokens
+                from gotrain import level2
+
+                t_l2 = time.time()
+                summary = level2.run(session, log=lambda m: print(m, flush=True))
+                ledger.append(sess.SESSIONS, {"type": "level2", "session_id": session.session_id,
+                                              "summary": summary, "time": _now()})
+                end = {"phase": "level2", "tokens": {"inputTokens": 0, "outputTokens": 0, "totalTokens": 0},
+                       "tool_calls": 0, "wall_min": round((time.time() - t_l2) / 60, 1), "error": None}
+                totals.append(end)
+                sess.phase_done(session.session_id, "level2", tokens=end["tokens"], tool_calls=0,
+                                wall_min=end["wall_min"])
+                continue
             wall = args.max_wall_min or 2 * session.P1 + 30
             end = run_phase(session, phase, args.max_tool_calls, wall, args.max_nudges)
             totals.append(end)

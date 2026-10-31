@@ -473,7 +473,11 @@ def harness_step(session: Session) -> dict | None:
 # --------------------------------------------------------------------------- budget
 
 def incumbent(session: Session) -> dict | None:
-    """The session's incumbent (gotrain.noise): the first finished decision run, replaced only by a z >= 2 gain."""
+    """The session's incumbent: the latest promoted Level 2 composite if any (gotrain.level2), else the Level 1 rule
+    (gotrain.noise): the first finished decision run, replaced only by a z >= 2 gain."""
+    promoted = [r for r in session_runs(session).values() if r["stage"] == "level2" and r.get("promoted")]
+    if promoted:
+        return max(promoted, key=lambda r: (r["created_at"], r["run_id"]))
     run_id = noise.incumbent(session.session_id)
     return None if run_id is None else ledger.runs()[run_id]
 
@@ -636,7 +640,13 @@ def wait(run_id: str, max_minutes: float = 15.0, poll_s: float = 10.0, session: 
     deadline = time.time() + max(0.0, max_minutes) * 60
     while True:
         c = check(run_id, session)
-        if c["status"] != "running" or time.time() >= deadline:
+        if c["status"] != "running":
+            # the run has reported its end; its process may need a few seconds to exit and release the GPU lock
+            rec, t0 = ledger.runs()[run_id], time.time()
+            while _alive(rec) and time.time() - t0 < 30:
+                time.sleep(0.5)
+            return c
+        if time.time() >= deadline:
             return c
         time.sleep(poll_s)
 
@@ -852,9 +862,9 @@ def finalize(session: Session, rationale: str, launched_by: str = "agent") -> di
     rec = incumbent(session)
     if rec is None:
         raise ValueError("this session has no incumbent (no finished decision run): nothing to finalize")
-    if not (_run_dir(rec) / "checkpoint.pt").exists():
+    if not ((_run_dir(rec) / "checkpoint.pt").exists() or (_run_dir(rec) / "composite.json").exists()):
         raise FileNotFoundError(f"{rec['run_id']} has no checkpoint")
-    tta = False  # Step 12: the TTA gate decides
+    tta = False  # TTA, when its gate passed, lives inside the Level 2 composite (composite.json)
     try:  # the GPU lock is taken before the registry's "opened" line: a busy GPU never burns the test touch
         with state.gpu_lock(f"finalize:{session.task}", session_id=session.session_id, workspace=str(WORKSPACE)):
             entry = final_test(str(_run_dir(rec)), tta=tta)  # refuses if the task's test split was already opened

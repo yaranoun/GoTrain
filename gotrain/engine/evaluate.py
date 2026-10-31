@@ -118,14 +118,22 @@ def final_test(run_dir: str, tta: bool) -> dict:
     """The ONLY place the test split is loaded. Called from runs.finalize, once per task, machine-wide.
 
     Order: sandbox check -> machine-wide test registry -> this workspace's vault -> registry "opened" ->
-    read test -> test_stats.npz -> vault entry (with its sha256) -> registry "done"."""
+    read test -> test_stats.npz -> vault entry (with its sha256) -> registry "done".
+    run_dir is a training run (checkpoint.pt) or a Level 2 composite (composite.json: members + TTA flags)."""
     from gotrain import REPO, WORKSPACE, is_sandbox, state
     from gotrain.ledger import VAULT, append, now, read
 
     if is_sandbox():
         raise PermissionError("final_test is disabled in a sandbox workspace (GOTRAIN_WORKSPACE)")
     run_dir = Path(run_dir)
-    task, cfg, device = _load_run(run_dir)
+    composite = json.loads((run_dir / "composite.json").read_text()) if (run_dir / "composite.json").exists() else None
+    if composite is not None:
+        task, cfg = composite["task"], {"composite": composite}
+        for m in composite["members"]:  # the members are exactly the checkpoints recorded at Level 2
+            if _sha256((WORKSPACE / m["run_dir"] / "checkpoint.pt").read_bytes()) != m["checkpoint_sha256"]:
+                raise RuntimeError(f"member {m['run_id']} checkpoint changed since the composite was built")
+    else:
+        task, cfg, device = _load_run(run_dir)
     if not state.test_allowed(task):
         raise PermissionError(f"Test split for {task} was already opened (machine-wide test registry). "
                               f"One test evaluation per task.")
@@ -137,7 +145,21 @@ def final_test(run_dir: str, tta: bool) -> dict:
     data = _load_arrays(task, "test")
     ids, groups = sample_ids(data, "test")
     stats_path = run_dir / "test_stats.npz"
-    if info(task)["type"] == "segmentation":
+    is_seg = info(task)["type"] == "segmentation"
+    if composite is not None:
+        from gotrain.level2 import composite_stats
+
+        members = [{"run_dir": WORKSPACE / m["run_dir"], "tta": m["tta"]} for m in composite["members"]]
+        arr = composite_stats(task, members, {**data, "ids": ids, "groups": groups})
+        if is_seg:
+            scores = seg.iou_scores(arr["confusion"].sum(0), None)
+            test_metrics = {k: scores[k] for k in ("miou", "per_class_iou", "pixel_accuracy")}
+            stats_sha = write_stats(stats_path, ids, groups, "miou", arr["classes"], confusion=arr["confusion"])
+        else:
+            scores, _ = _scores(arr["y"], arr["probs"].argmax(1), data["n_classes"])
+            test_metrics = {"accuracy": scores["accuracy"], "macro_f1": scores["macro_f1"]}
+            stats_sha = write_stats(stats_path, ids, groups, "accuracy", data["classes"], y=arr["y"], probs=arr["probs"])
+    elif is_seg:
         pred = _model_and_masks(run_dir, task, cfg, device, data, tta)
         ign = ignore_index(task)
         scores = seg.iou_scores(seg.confusion(pred, data["y"], data["n_classes"], ign), ign)
@@ -155,7 +177,9 @@ def final_test(run_dir: str, tta: bool) -> dict:
         "task": task,
         "run_id": run_dir.name,
         "config_hash": _sha256(json.dumps({"task": task, **cfg}, sort_keys=True).encode()),
-        "checkpoint_sha256": _sha256((run_dir / "checkpoint.pt").read_bytes()),
+        "checkpoint_sha256": _sha256((run_dir / ("composite.json" if composite else "checkpoint.pt")).read_bytes()),
+        "members": None if composite is None else [{"run_id": m["run_id"], "checkpoint_sha256": m["checkpoint_sha256"],
+                                                    "tta": m["tta"]} for m in composite["members"]],
         "tta": tta,
         "test_metrics": test_metrics,
         "test_stats_sha256": stats_sha,
