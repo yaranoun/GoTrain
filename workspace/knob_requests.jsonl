@@ -1,0 +1,1 @@
+{"session_id": "m-pv4ger-seg__main__chain", "task": "m-pv4ger-seg", "name": "epochs / time-aware LR schedule", "rationale": "The cap stops training before a fixed-epoch cosine schedule finishes. A schedule that anneals to the GPU-minute cap would remove this confound when comparing backbones and learning rates.", "time": "2026-10-31T21:42:49Z"}
