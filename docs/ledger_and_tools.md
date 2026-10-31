@@ -429,3 +429,20 @@ way `runs.sync` settles runs, plus one tamper per rule).
   the `sigma_seed` record equals |score(A′) − score(A)|.
 - **pot:** each launch fits its pot (P1: screen/train/seed_repeat; P2: level2); ≤ 2 screens; no P1 row after the
   first level2 row; `charged_min` ≤ cap + 0.25; total P2 charge ≤ P2 + 0.25 (composites have no cap).
+
+## Step 9 (31 Oct) — held-out dataset and fallback: `tasks.py` entries
+
+Checked on the HF v1.0 **train split only** with `scripts/step9_inspect.py` (CPU, ≤ 48 samples; pictures and the
+JSON report go to `.sandbox/step9/`). Gate tests without data: `tests/test_step9.py`.
+- **m-SA-crop-type:** stored order B01–B12 without B10, then CLM; names verified by the resolution fingerprint
+  (60 m bands in 6×6 blocks, 20 m in 2×2, B02/B03/B04/B08 native 10 m) and the correlation fingerprint, and by the
+  GEO-Bench converter. `CHANNELS` keeps the 12 S2 bands (SSL4EO fills B10). **Values are 8-bit (0–255, ≈
+  reflectance × 255)**, not reflectance × 10⁴ as on the other S2 tasks, so `DISPLAY_SCALE` is 76.5, and
+  `norm: div10000` gives SSL4EO inputs about 39× too small. Cloud layer: 0 on every pixel (dropped). 10 classes
+  (converter names); class 0 "No Data" → `IGNORE_INDEX = 0`. Five dates per field tile with identical label
+  masks → `GROUP_BY = label_hash` (val: 250 groups). True colour looks natural.
+- **m-nz-cattle:** 8-bit aerial RGB (R, G, B), 500×500, classes `no cattle` / `cattle` (masks are radius-6 px
+  boxes around points). About half the images have a `_shifted` twin at the same coordinates (train 204 pairs, val 6;
+  50 val locations also occur in train: disclosed). No `GROUP_BY` yet: it needs a name-based rule in `data.py`.
+- Scopes: SA-crop (segmentation, s2-multispectral, multispectral, (1,10]m); nz-cattle (segmentation, aerial-rgb,
+  rgb, ≤1m). No ledger row for either task exists in any checkout.
