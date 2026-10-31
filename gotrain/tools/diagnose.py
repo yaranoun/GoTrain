@@ -1,0 +1,86 @@
+"""Diagnose tools: evaluate a run (metrics + plots), compare runs, query the ledger."""
+
+from strands import tool
+
+from gotrain import runs
+from gotrain.tools._result import EXPECTED, error, ok
+
+
+@tool
+def evaluate_run(run_id: str, tta: bool = False) -> dict:
+    """Validation metrics of a finished run with plots to look at: confusion matrix and its worst mistakes
+    (classification: most confident wrong predictions; segmentation: lowest-IoU images, truth vs prediction).
+
+    Args:
+        run_id: a done or killed run.
+        tta: also average the 8 flips/rotations (test-time augmentation). Helps on some tasks, not others.
+    """
+    try:
+        r = runs.evaluate(run_id, tta)
+    except EXPECTED as e:
+        return error(str(e))
+    p, s = r["primary"], r["scores"]
+    lines = [f"{run_id} val{' (TTA)' if tta else ''}: {p} {runs.fmt(p, s[p])}"]
+    if r["val_no_tta"] is not None and r["val_tta"] is not None:
+        lines.append(f"Without TTA {runs.fmt(p, r['val_no_tta'])}, with TTA {runs.fmt(p, r['val_tta'])}")
+    if "macro_f1" in s:
+        lines.append(f"macro F1 {s['macro_f1']:.4f}")
+        per = s["per_class_accuracy"]
+    else:
+        lines.append(f"pixel accuracy {s['pixel_accuracy']:.4f}")
+        per = s["per_class_iou"]
+    label = "accuracy" if "macro_f1" in s else "IoU"
+    lines.append(f"Per-class {label}: " + ", ".join(f"{c}: {'—' if v is None else round(v, 3)}"
+                                                   for c, v in zip(r["classes"], per)))
+    images = [(f"{run_id} confusion matrix", r["plots"][0]), (f"{run_id} worst mistakes", r["plots"][1])]
+    return ok("\n".join(lines), images)
+
+
+@tool
+def compare_runs(run_ids: list[str]) -> dict:
+    """Compare 2 to 6 runs of one task: which config values differ, their scores, and overlaid learning curves.
+
+    Args:
+        run_ids: e.g. ["m-eurosat-0003", "m-eurosat-0004"].
+    """
+    try:
+        c = runs.compare(run_ids)
+    except EXPECTED as e:
+        return error(str(e))
+    p = c["primary"]
+    lines = ["Config differences:"]
+    lines += [f"- {k}: " + " | ".join(f"{rid}={v}" for rid, v in zip(run_ids, vals))
+              for k, vals in c["config_diff"].items()] or ["- none"]
+    lines.append(f"Scores ({p}):")
+    lines += [f"- {t['run_id']}: {t['status']}, val {runs.fmt(p, t['val'])}, TTA {runs.fmt(p, t['val_tta'])}, "
+              f"best epoch {t['best_epoch']}, {t['gpu_min']} min, {t['outcome']}" for t in c["table"]]
+    return ok("\n".join(lines), [("learning curves", c["curves_png"])])
+
+
+@tool
+def query_ledger(task: str = "", stage: str = "", top_k: int = 10, sort: str = "val") -> dict:
+    """Past runs from the ledger as a compact table: model, key settings, scores, outcome, hypothesis.
+
+    Args:
+        task: only this task (empty = all tasks).
+        stage: only "screen", "train" or "final" runs (empty = all).
+        top_k: max rows.
+        sort: "val" (best first) or "recent" (newest first).
+    """
+    try:
+        rows = runs.query(task or None, stage or None, top_k, sort)
+    except EXPECTED as e:
+        return error(str(e))
+    if not rows:
+        return ok("No runs in the ledger yet" + (f" for {task}." if task else "."))
+    lines = []
+    for r in rows:
+        p = r["primary"]
+        lines.append(f"- {r['run_id']} [{r['stage']}, {r['status']}] {r['model']} lr {r['lr']} ep {r['epochs']} "
+                     f"bs {r['batch_size']} img {r['img_size'] or 'native'}{' frozen' if r['freeze'] else ''}: "
+                     f"val {runs.fmt(p, r['val'])}"
+                     + (f" (TTA {runs.fmt(p, r['val_tta'])})" if r["val_tta"] is not None else "")
+                     + f", {r['gpu_min']} min, {r['outcome']}"
+                     + (f", parent {r['parent']}" if r["parent"] else "")
+                     + f"\n    hypothesis: {r['hypothesis'][:200]}")
+    return ok("\n".join(lines))

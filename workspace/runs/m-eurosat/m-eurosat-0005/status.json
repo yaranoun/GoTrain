@@ -1,0 +1,1 @@
+{"status": "killed", "epoch": 5, "epochs": 30, "val_accuracy": 0.9, "best_epoch": 4, "reason": "tool check: kill path"}

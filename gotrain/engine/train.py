@@ -45,6 +45,7 @@ DEFAULTS = {
     "freeze_backbone": False,
     "train_fraction": 1.0,   # <1.0 for fast screening runs
     "seed": 0,
+    "time_limit_min": None,  # stop after the epoch that crosses this (set by launch_training from the budget)
 }
 
 
@@ -187,23 +188,37 @@ def train(run_dir: Path) -> dict:
         if val > best[key]:
             best = {key: val, "best_epoch": epoch}
             best_extra = extra
-            torch.save(model.state_dict(), run_dir / "checkpoint.pt")
+            tmp = run_dir / "checkpoint.pt.tmp"  # atomic: a kill mid-save never leaves a corrupt checkpoint
+            torch.save(model.state_dict(), tmp)
+            tmp.replace(run_dir / "checkpoint.pt")
+        _write_history(run_dir, history)  # every epoch, so curves survive a kill or crash
         _write_status(run_dir, "running", epoch=epoch, epochs=cfg["epochs"], **best)
-
-    with (run_dir / "history.csv").open("w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=list(history[0]))
-        w.writeheader()
-        w.writerows(history)
+        limit = cfg["time_limit_min"]
+        if limit and (time.time() - t0) / 60 >= limit and epoch < cfg["epochs"]:
+            stopped_early = f"time limit {limit} min reached after epoch {epoch}/{cfg['epochs']}"
+            print(json.dumps({"stopped_early": stopped_early}), flush=True)
+            break
+    else:
+        stopped_early = None
 
     metrics = {
         "primary": primary,
         "val": {primary: best[key], **best_extra},
         "best_epoch": best["best_epoch"],
+        "epochs_run": len(history),
         "train_loss_final": history[-1]["train_loss"],
         "gpu_minutes": round((time.time() - t0) / 60, 2),
+        "stopped_early": stopped_early,
     }
     (run_dir / "metrics.json").write_text(json.dumps(metrics, indent=2))
     return metrics
+
+
+def _write_history(run_dir: Path, history: list[dict]) -> None:
+    with (run_dir / "history.csv").open("w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=list(history[0]), lineterminator="\n")
+        w.writeheader()
+        w.writerows(history)
 
 
 def _write_status(run_dir: Path, status: str, **extra) -> None:

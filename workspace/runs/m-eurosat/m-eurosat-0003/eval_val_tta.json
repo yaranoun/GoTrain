@@ -1,0 +1,34 @@
+{
+  "split": "val",
+  "tta": true,
+  "accuracy": 0.9,
+  "macro_f1": 0.8982761685520032,
+  "per_class_accuracy": [
+    0.96,
+    0.95,
+    0.8,
+    0.78,
+    0.94,
+    0.94,
+    0.69,
+    0.98,
+    0.97,
+    0.99
+  ],
+  "classes": [
+    "Annual Crop",
+    "Forest",
+    "Herbaceous Vegetation",
+    "Highway",
+    "Industrial Buildings",
+    "Pasture",
+    "Permanent Crop",
+    "Residential Buildings",
+    "River",
+    "Sea and Lake"
+  ],
+  "plots": [
+    "/home/sagemaker-user/GoTrain/workspace/runs/m-eurosat/m-eurosat-0003/plots/confusion_tta.png",
+    "/home/sagemaker-user/GoTrain/workspace/runs/m-eurosat/m-eurosat-0003/plots/failures_tta.png"
+  ]
+}

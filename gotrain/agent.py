@@ -16,9 +16,13 @@ Tune on the validation split only. Never try to access the test split except via
 
 def build_agent() -> Agent:
     model = BedrockModel(model_id=MODEL_ID, region_name=REGION)
+    from gotrain.tools.diagnose import compare_runs, evaluate_run, query_ledger
     from gotrain.tools.explore import list_tasks, profile_dataset, save_profile_notes
+    from gotrain.tools.finalize import finalize
+    from gotrain.tools.train import check_run, get_budget, kill_run, launch_training, list_backbones
 
-    tools = [list_tasks, profile_dataset, save_profile_notes]
+    tools = [list_tasks, profile_dataset, save_profile_notes, list_backbones, get_budget, launch_training,
+             check_run, kill_run, evaluate_run, compare_runs, query_ledger, finalize]
     return Agent(model=model, system_prompt=SYSTEM_PROMPT, tools=tools)
 
 

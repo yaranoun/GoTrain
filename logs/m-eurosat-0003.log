@@ -1,0 +1,4 @@
+run_dir: /home/sagemaker-user/GoTrain/workspace/runs/m-eurosat/m-eurosat-0003
+{"epoch": 1, "train_loss": 2.029096672611852, "val_accuracy": 0.677, "lr": 0.001, "elapsed_s": 1.7}
+{"epoch": 2, "train_loss": 0.8814743641884096, "val_accuracy": 0.843, "lr": 0.0005, "elapsed_s": 2.6}
+{"epoch": 3, "train_loss": 0.4437052684445535, "val_accuracy": 0.884, "lr": 0.0, "elapsed_s": 3.4}

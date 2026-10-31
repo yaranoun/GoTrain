@@ -197,3 +197,15 @@ Grouped by workflow step. ⭐ = creative layer; build after the basic loop runs.
 - Which pretrained remote-sensing weights load on the instance? (check internet access to HF / torchgeo)
 - Should the agent be allowed to edit the training code (autoresearch-style), or only configs?
   Suggestion: configs only at first; add a `patch_training_code` tool later if time allows.
+
+## Implementation notes (Step 3, 31 Oct)
+
+- Implemented: `list_backbones(task)`, `get_budget`, `launch_training`, `check_run`, `kill_run`, `evaluate_run`
+  (the `evaluate` row above), `compare_runs`, `query_ledger`, `finalize`. Logic in `gotrain/runs.py`, Strands wrappers
+  in `gotrain/tools/`.
+- Run records follow §1, plus: `delta_vs_best` (vs the best earlier run when there is no parent), `outcome` can be
+  `first`, `pid`, `artifacts.log`, `log_tail` (failed runs), `updated_at`.
+- Rules enforced in code: one training at a time; per-task budget (default 60 GPU min, `runs.set_budget`, not an
+  agent tool), each run gets `time_limit_min` = remaining budget; `finalize` only on `done` runs.
+- Sandbox: `GOTRAIN_WORKSPACE` redirects runs/ledger/vault/logs; `finalize` and `final_test` refuse there.
+- `workspace/vault_incidents.jsonl`: voided vault entries, kept verbatim with the reason (INC-001).

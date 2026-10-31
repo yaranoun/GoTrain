@@ -1,0 +1,7 @@
+{
+  "task": "m-eurosat",
+  "backbone": "resnet18",
+  "weights": "imagenet",
+  "epochs": 30,
+  "time_limit_min": 59.9
+}

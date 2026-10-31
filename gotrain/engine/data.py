@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from gotrain import WORKSPACE
+from gotrain import CACHE
 from gotrain.engine.download import dataset_dir
 from gotrain.engine.tasks import CHANNELS, CLASS_NAMES, info
 
@@ -21,7 +21,7 @@ GEOBENCH_SPLIT = {"train": "train", "val": "valid", "test": "test"}
 
 
 def _cache_path(task: str, split: str) -> Path:
-    return WORKSPACE / "cache" / task / f"{split}.npz"
+    return CACHE / task / f"{split}.npz"
 
 
 def _build_cache(task: str, split: str) -> Path:

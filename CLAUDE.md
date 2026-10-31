@@ -7,6 +7,7 @@ Built with Strands + Claude Sonnet on Bedrock (`eu.anthropic.claude-sonnet-5-5`,
 ## Hard rules
 - **Never credit Claude** in commits, PRs, code or docs: no `Co-Authored-By: Claude`, no "Generated with Claude". Commits use the user's git identity only.
 - **Test split is touched once per task**, only via `gotrain.engine.evaluate.final_test` (wrapped by `finalize`). Everything else tunes on val. `data.load_split` refuses `split="test"`; never bypass it.
+- **Never call `finalize` while testing.** Tool checks / experiments with the tools run in a sandbox: set `GOTRAIN_WORKSPACE=.sandbox/workspace` before importing gotrain (own ledger/runs/logs/vault; `finalize` and `final_test` refuse there). See INC-001 below.
 - **Keep every score traceable**: tools write the ledger (`workspace/ledger.jsonl`), the agent only adds hypothesis/diagnosis text. Keep agent logs.
 - **No large files in git**: checkpoints, `.npz` caches, datasets, zips are gitignored. Small results (configs, metrics, history, plots, ledger, logs) are committed.
 - Long jobs: run with `nohup`/`tmux` from the terminal, output to `logs/`, not in notebook cells.
@@ -27,11 +28,15 @@ gotrain/engine/   plain training engine (no agent code)
   evaluate.py     val metrics + plots (confusion; failures / worst-IoU overlays), final_test + vault
   profile.py      dataset profile: stats + true/false colour/NDVI grids
   viz.py          composites, NDVI
-gotrain/tools/    Strands @tool wrappers (explore.py done)
+gotrain/runs.py   experiment ops behind the tools (plain Python, reusable by MCP): launch/check/kill/evaluate/
+                  compare runs, query ledger, budget, finalize; writes the ledger; one training at a time
+gotrain/tools/    Strands @tool wrappers: explore.py, train.py (list_backbones, get_budget, launch_training,
+                  check_run, kill_run), diagnose.py (evaluate_run, compare_runs, query_ledger), finalize.py
 gotrain/ledger.py JSONL ledger/playbook/vault helpers
+notebooks/        step3_tools_check.ipynb: every tool by hand, in a sandbox workspace
 gotrain/agent.py  agent + system prompt
 docs/             ledger_and_tools.md (record formats + tool list), PLAN.md (build plan)
-workspace/        runs/, profiles/, ledger.jsonl, vault.jsonl, playbook.jsonl (cache/ gitignored)
+workspace/        runs/, profiles/, ledger.jsonl, vault.jsonl, vault_incidents.jsonl, budget.json, playbook.jsonl (cache/ gitignored)
 ```
 
 ## Commands
@@ -57,9 +62,12 @@ python -m gotrain.engine.evaluate workspace/runs/m-eurosat/m-eurosat-0002 --tta
 ## Agent workflow (per task)
 profile → recall playbook → plan candidates → screen cheaply → train best → diagnose failures (look at images) → iterate within budget → finalize once (TTA, test vault, model card) → reflect (write lessons).
 
+## Incidents (disclosed)
+- **INC-001 (31 Oct): m-eurosat test split evaluated once by accident** while hand-checking the Step 3 tools: a notebook passed the killed tool-check run `m-eurosat-0005` (5 epochs) to `finalize`; test accuracy 0.895 was observed. No model or decision was chosen with it. The team voided the vault entry (kept verbatim in `workspace/vault_incidents.jsonl`); m-eurosat will be finalized once more with a model selected on val only, and that score must be reported together with this incident. Fixes: finalize accepts only `done` runs; tool checks run in a sandbox where finalize/final_test refuse.
+
 ## Status (31 Oct)
 - **Tasks:** classification `m-eurosat`, `m-brick-kiln`; segmentation `m-pv4ger-seg`, `m-cashew-plant`.
-- Engine done for classification + segmentation; `profile_dataset` tool done.
+- Engine done for classification + segmentation; Step 3 tools done (`notebooks/step3_tools_check.ipynb`). Default budget 60 GPU min/task (`runs.set_budget`, operator only).
 - m-eurosat val: ResNet18 ImageNet 64px **96.4%** (0.5 min); ResNet50 SSL4EO 224px **98.3%** (4.8 min). TTA gives no gain here (98.2%).
 - m-pv4ger-seg val: U-Net ResNet34 ImageNet 320px, 20 ep **0.955 mIoU**, **0.959 with TTA** (11.7 min).
 - m-brick-kiln val: ResNet18 ImageNet 64px, 30 ep **98.9%** acc (2.3 min); TTA 98.6% (no gain).

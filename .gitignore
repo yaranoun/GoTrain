@@ -21,3 +21,6 @@ workspace/cache/
 *.pdf
 .env
 nohup.out
+
+# Sandbox workspace for tool checks / tests (GOTRAIN_WORKSPACE)
+.sandbox/

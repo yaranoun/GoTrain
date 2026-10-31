@@ -97,8 +97,11 @@ def evaluate(run_dir: str, split: str = "val", tta: bool = False) -> dict:
 
 def final_test(run_dir: str, tta: bool) -> dict:
     """The ONLY place the test split is loaded. Called from tools.finalize, once per task."""
+    from gotrain import is_sandbox
     from gotrain.ledger import VAULT, append, now, read
 
+    if is_sandbox():
+        raise PermissionError("final_test is disabled in a sandbox workspace (GOTRAIN_WORKSPACE)")
     run_dir = Path(run_dir)
     task, cfg, device = _load_run(run_dir)
     vault = read(VAULT)
