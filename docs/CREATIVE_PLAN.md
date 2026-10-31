@@ -4,10 +4,10 @@
 
 | | |
 |---|---|
-| Status | **Approved by Aya on 31 Oct 2026**, including the recommended defaults in §3.2. **Amended the same evening with option C** from Aya's review of eight extra ideas (§12): small additions before the freeze (Steps 6–9) and at report time (Step 14). Still to settle: the deadline and logistics (§10 item 10) and whether a second coding session is used (§10 item 6). Next: the build agent reviews this plan against the latest `origin/main`, then starts Step 6 (interfaces first). Step 5 (amended) goes to the second session, or to a teammate if the build agent works alone (§7.2). |
+| Status | **Approved by Aya on 31 Oct 2026**, including the recommended defaults in §3.2. **Amended the same evening with option C** from Aya's review of eight extra ideas (§12): small additions before the freeze (Steps 6–9) and at report time (Step 14). **Settled at kickoff (31 Oct, 19:05):** deadline T = 11:00 on 1 Nov, and a second coding session is used (§10 items 6 and 10). The presentation slot is still open. At that T the projected freeze is below the lowest rung of the §7.3 ladder (§7.2). Next: the build agent reviews this plan against the latest `origin/main`, then starts Step 6 (interfaces first). Step 5 (amended) goes to the second session, or to a teammate if the build agent works alone (§7.2). |
 | Code baseline | `origin/main` @ `82b8860`. Steps 0–4 are done; Step 5 (baselines) has not started and is amended here (§6). |
 | Continues | `docs/PLAN.md`. Step numbers continue from Step 5. |
-| Deadline | T = 1 Nov 2026, `__:__` Beirut. **To confirm with the organisers.** Times below are relative to the approval time N, the freeze F1, or T. |
+| Deadline | T = 1 Nov 2026, **11:00 Beirut** (16 h after the 19:05 kickoff on 31 Oct). Presentation slot to confirm with the organisers. Times below are relative to the approval time N, the freeze F1, or T. |
 | Companion | `docs/CREATIVE_PLAN_APPENDIX.md`: the long-form specification produced during review. **This document wins on any conflict.**<br>The appendix numbers steps differently. Main → appendix: 6→6, 7→7 + 8, 8→9, 9→7b, 10→10, 11→11 + 13, 12→12, 13→14 + 15, 14→16 + 17. |
 | Numbers | Durations and GPU times are estimates unless marked *measured*. Reference scores were checked against the GEO-Bench result CSVs on 31 Oct. |
 
@@ -650,6 +650,12 @@ Session verify runs after each dataset, and a harness failure sets `PAUSE`. **Op
 
 Option C (§12), with the safeguards added in its review, adds ≈ 1.25 h before the freeze with two sessions (≈ 2.5 h with one build agent). Without it, the times were 02:30 / 11:00 / 14:00 and 05:00 / 13:30 / 16:30.
 
+**Projection at the decided T = 11:00, with two sessions** (31 Oct, 19:05):
+- F1 ≈ 03:45 gives T − F1 ≈ 7.25 h. That is **below the lowest rung** of §7.3 (7.7 h for B = 20). If nothing changes, the "< 7.7 h" row applies at F1.
+- With O = 2.75 h, B = 20 needs F1 by ≈ 03:20, and B = 30 needs F1 by ≈ 02:20.
+- With F1 at 03:45, B = 20 still fits if the smoke test measures O ≤ ≈ 2.3 h.
+- B is still chosen once, at F1, by the §7.3 formula with the measured O.
+
 ### 7.3 Scope ladder (computed once at F1; never changed mid-chain; the same on every dataset)
 
 **Rule:** choose the largest B with **T − F1 ≥ 5.75·B/60 h + O + 3 h**, where:
@@ -756,11 +762,11 @@ Every number on the slides comes from `python -m gotrain.report`.
 3. **Dataset #5 = m-SA-crop-type**, with m-nz-cattle as fallback instead of m-pv4ger (O7).
 4. **Baselines hidden from the agent** (O8). This changes PLAN.md Step 5.
 5. **Level 2 set**, including the distilled student (O3).
-6. **Builders:** the build agent alone, or a second coding session (recommended; it moves F1 ≈ 3.75 h earlier).
+6. **Builders:** **decided 31 Oct: a second coding session is used** (it moves F1 ≈ 3.75 h earlier than the build agent alone).
 7. **Configs only; failure images visible** (O1, O2).
 8. **Positioning wording** in §4.7, now that HASTE and ML-Master 2.0 are known prior art.
 9. **Night-time go criteria** for F1 (Step 10 gate).
-10. **Logistics:** deadline T, slot length, presenters, who asks the organisers.
+10. **Logistics:** **deadline T = 11:00 on 1 Nov (decided 31 Oct).** Still open: slot length, presenters, who asks the organisers.
 
 ---
 
