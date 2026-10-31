@@ -144,3 +144,44 @@ def test_readme_results_block_is_filled_between_markers(ws, tmp_path):
     block = after.split(report.README_BEGIN)[1].split(report.README_END)[0]
     assert "| m-eurosat |" in block and "INC-001 disclosed" in block
     assert (tmp_path / "r" / "readme_results.md").read_text().strip() == report.README_BEGIN + block + report.README_END
+
+
+def test_main_untouched_allows_the_run_chain_merge(tmp_path, monkeypatch):
+    """Merging run/chain into main (--no-ff) passes main_untouched: the chain's workspace/ commits come in through the
+    merge's second parent. A commit of main's own that touches workspace/ fails, also before it is pushed."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.invalid", "GIT_COMMITTER_NAME": "t",
+           "GIT_COMMITTER_EMAIL": "t@example.invalid", "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+
+    def git(*args):
+        out = subprocess.run(["git", "-c", "commit.gpgsign=false", *args], cwd=repo, env=env, capture_output=True,
+                             text=True)
+        assert out.returncode == 0, out.stderr
+        return out.stdout.strip()
+
+    def commit(path, text, msg):
+        (repo / path).parent.mkdir(parents=True, exist_ok=True)
+        (repo / path).write_text(text)
+        git("add", path)
+        git("commit", "-q", "-m", msg)
+        return git("rev-parse", "HEAD")
+
+    git("init", "-q", "-b", "main")
+    commit("workspace/ledger.jsonl", "{}\n", "freeze")
+    git("tag", "freeze-f1")
+    git("checkout", "-q", "-b", "run/chain")
+    commit("workspace/ledger.jsonl", "{}\n{}\n", "chain: results")
+    git("checkout", "-q", "main")
+    pushed = commit("README.md", "docs\n", "docs on main")
+    git("update-ref", "refs/remotes/origin/main", pushed)
+    git("merge", "-q", "--no-ff", "run/chain", "-m", "Merge run/chain")
+    commit("README.md", "docs + results\n", "Publish")
+    assert "chain: results" in git("log", "--format=%s", "freeze-f1..main", "--", "workspace/")  # the old check fails
+    monkeypatch.setattr(gotrain, "REPO", repo)
+    problems, summary = gotrain.verify.full_main_untouched([])
+    assert problems == [] and "origin/main" in summary and "main" in summary.replace("origin/main", ""), summary
+    commit("workspace/vault.jsonl", "{}\n", "main edits workspace")  # local main only: origin/main is still clean
+    problems, _ = gotrain.verify.full_main_untouched([])
+    assert len(problems) == 1 and problems[0].startswith("main commit touches workspace/") \
+        and "main edits workspace" in problems[0], problems

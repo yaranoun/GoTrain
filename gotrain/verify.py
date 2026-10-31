@@ -434,12 +434,18 @@ def full_playbook_grew(vault) -> tuple[list[str], str]:
 
 
 def full_main_untouched(vault) -> tuple[list[str], str]:
-    main = _ref(MAIN_REFS)
-    if _ref((FREEZE_TAG,)) is None or main is None:
+    mains = [r for r in MAIN_REFS if _ref((r,))]
+    if _ref((FREEZE_TAG,)) is None or not mains:
         return [], f"{NA} (needs tag {FREEZE_TAG})"
-    _, log = _git("log", "--format=%h %s", f"{FREEZE_TAG}..{main}", "--", "workspace/")
-    bad = [l for l in log.splitlines() if l.strip()]
-    return [f"{main} commit touches workspace/: {l}" for l in bad], f"{main} since {FREEZE_TAG}"
+    # only main's own commits count: its first-parent line without merge commits (merging run/chain into main brings
+    # the chain's workspace/ commits in through the merge's second parent). Local main too, so a merge is checked
+    # before it is pushed.
+    bad = {}
+    for main in mains:
+        _, log = _git("log", "--first-parent", "--no-merges", "--format=%h %s", f"{FREEZE_TAG}..{main}", "--",
+                      "workspace/")
+        bad.update({l: main for l in log.splitlines() if l.strip()})
+    return [f"{m} commit touches workspace/: {l}" for l, m in bad.items()], f"{', '.join(mains)} since {FREEZE_TAG}"
 
 
 def verify_full() -> dict:
