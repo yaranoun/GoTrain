@@ -29,6 +29,8 @@ off_ws() { echo "experiments/playbook-ab/$1/off/workspace"; }
 
 commit() {
   local msg="$1"
+  # committed copy of the machine-wide test registry (starts with the voided INC-001 seed line once anything is tested)
+  [ -f "$STATE/tested.jsonl" ] && cp "$STATE/tested.jsonl" workspace/test_registry.jsonl
   git add -A workspace logs experiments 2>/dev/null
   # never commit large files: unstage anything over 5 MB
   git diff --cached --name-only -z | while IFS= read -r -d '' f; do
