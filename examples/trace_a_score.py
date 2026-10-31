@@ -123,8 +123,9 @@ def main() -> int:
     for L in born:
         tests = ", ".join(f"{t['dataset']} {t['result']}" for t in L.get("tests", [])) or "not re-tested yet"
         before = L["born_at"] < e["timestamp"]
-        print(f"   {mark(before)} {L['lesson_id']} ({L['status']}, conf {L['confidence']:.2f}), born before the test "
-              f"touch; evidence {L['evidence']['runs']}; tests: {tests}")
+        print(f"   {mark(before)} {L['lesson_id']} ({L['status']}, conf {L['confidence']:.2f}, z "
+              f"{L.get('sign', 1) * L['effect']['z']:+.2f} in its direction), born before the test touch; evidence "
+              f"{L['evidence']['runs']}; tests: {tests}")
         print(f"     \"{L['statement']}\"")
     return 0
 
