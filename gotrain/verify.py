@@ -374,8 +374,12 @@ def full_test_registry_copy(vault) -> tuple[list[str], str]:
         return [], f"{NA} (no committed copy at {path.name})"
     lines = ledger.read(path)
     done = {l["vault_entry_hash"] for l in lines if l.get("event") == "done"}
-    problems = [f"{e['task']}: vault entry {e['entry_hash'][:15]}… has no 'done' line" for e in vault
-                if e["entry_hash"] not in done]
+    from gotrain import state
+
+    live = {l.get("vault_entry_hash") for l in state.test_lines() if l.get("event") == "done"}
+    problems = [f"{e['task']}: vault entry {e['entry_hash'][:15]}… has no 'done' line"
+                + (" (the machine-wide registry has it: the committed copy lags until the chain's next commit)"
+                   if e["entry_hash"] in live else "") for e in vault if e["entry_hash"] not in done]
     problems += [f"'done' line {h[:15]}… has no vault entry" for h in done - {e["entry_hash"] for e in vault}]
     if not any(l.get("event") == "voided" and l.get("task") == "m-eurosat" for l in lines):
         problems.append("the voided m-eurosat line (INC-001) is missing")
