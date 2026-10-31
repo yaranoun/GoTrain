@@ -1,0 +1,30 @@
+{
+ "task": "m-brick-kiln",
+ "mechanism": "ensemble",
+ "members": [
+  {
+   "run_id": "m-brick-kiln-0005",
+   "run_dir": "runs/m-brick-kiln/m-brick-kiln-0005",
+   "tta": false,
+   "checkpoint_sha256": "sha256:57a58b54f3bc8a1911b5ccac9b180d726c8eee2c8bad28dc7a60f129aa3da87b"
+  },
+  {
+   "run_id": "m-brick-kiln-0007",
+   "run_dir": "runs/m-brick-kiln/m-brick-kiln-0007",
+   "tta": false,
+   "checkpoint_sha256": "sha256:72e9560ed613a97c1d96a97086a7608e74cbcdfbaf54ab264e30e04ed3e9d6b6"
+  },
+  {
+   "run_id": "m-brick-kiln-0008",
+   "run_dir": "runs/m-brick-kiln/m-brick-kiln-0008",
+   "tta": false,
+   "checkpoint_sha256": "sha256:6a094701808675f62423d99859b961ca932d71aba68a40c48d8af3b18ea7a1b2"
+  },
+  {
+   "run_id": "m-brick-kiln-0012",
+   "run_dir": "runs/m-brick-kiln/m-brick-kiln-0012",
+   "tta": false,
+   "checkpoint_sha256": "sha256:1a2b329a37a6dd6bbe34175b95043082faa445a7de2fe7693cf4a925300a9115"
+  }
+ ]
+}

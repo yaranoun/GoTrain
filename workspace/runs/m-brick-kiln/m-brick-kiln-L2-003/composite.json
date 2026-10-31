@@ -1,0 +1,12 @@
+{
+ "task": "m-brick-kiln",
+ "mechanism": "tta",
+ "members": [
+  {
+   "run_id": "m-brick-kiln-0008",
+   "run_dir": "runs/m-brick-kiln/m-brick-kiln-0008",
+   "tta": true,
+   "checkpoint_sha256": "sha256:6a094701808675f62423d99859b961ca932d71aba68a40c48d8af3b18ea7a1b2"
+  }
+ ]
+}
