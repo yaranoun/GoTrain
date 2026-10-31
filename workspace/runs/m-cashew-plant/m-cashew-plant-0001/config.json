@@ -1,0 +1,6 @@
+{
+  "task": "m-cashew-plant",
+  "backbone": "resnet34",
+  "weights": "imagenet",
+  "epochs": 20
+}

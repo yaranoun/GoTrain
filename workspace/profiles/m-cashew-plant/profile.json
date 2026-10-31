@@ -1,0 +1,147 @@
+{
+  "task": "m-cashew-plant",
+  "task_type": "segmentation",
+  "sensor": "sentinel-2",
+  "gsd_m": 10,
+  "n_bands": 12,
+  "band_names": [
+    "B01",
+    "B02",
+    "B03",
+    "B04",
+    "B05",
+    "B06",
+    "B07",
+    "B08",
+    "B8A",
+    "B09",
+    "B11",
+    "B12"
+  ],
+  "band_roles": {
+    "red": "B04",
+    "green": "B03",
+    "blue": "B02",
+    "nir": "B08",
+    "swir1": "B11",
+    "swir2": "B12"
+  },
+  "img_shape": [
+    12,
+    256,
+    256
+  ],
+  "splits": {
+    "train": 1350,
+    "val": 400
+  },
+  "classes": [
+    "no data",
+    "well-managed plantation",
+    "poorly-managed plantation",
+    "non-plantation",
+    "residential",
+    "background",
+    "uncertain"
+  ],
+  "band_stats": {
+    "B01": {
+      "mean": 517.63,
+      "std": 204.05,
+      "p1": 226.0,
+      "p99": 1035.0
+    },
+    "B02": {
+      "mean": 629.73,
+      "std": 227.96,
+      "p1": 316.0,
+      "p99": 1210.0
+    },
+    "B03": {
+      "mean": 887.0,
+      "std": 224.03,
+      "p1": 535.0,
+      "p99": 1444.0
+    },
+    "B04": {
+      "mean": 871.36,
+      "std": 354.5,
+      "p1": 346.0,
+      "p99": 1736.0
+    },
+    "B05": {
+      "mean": 1373.09,
+      "std": 284.03,
+      "p1": 868.0,
+      "p99": 2049.0
+    },
+    "B06": {
+      "mean": 2232.29,
+      "std": 373.55,
+      "p1": 1513.0,
+      "p99": 3176.0
+    },
+    "B07": {
+      "mean": 2546.84,
+      "std": 448.85,
+      "p1": 1716.0,
+      "p99": 3699.0
+    },
+    "B08": {
+      "mean": 2638.32,
+      "std": 414.46,
+      "p1": 1828.0,
+      "p99": 3684.0
+    },
+    "B8A": {
+      "mean": 2638.32,
+      "std": 414.46,
+      "p1": 1828.0,
+      "p99": 3684.0
+    },
+    "B09": {
+      "mean": 2848.91,
+      "std": 413.94,
+      "p1": 2071.0,
+      "p99": 3896.0
+    },
+    "B11": {
+      "mean": 2451.94,
+      "std": 501.54,
+      "p1": 1577.0,
+      "p99": 3638.0
+    },
+    "B12": {
+      "mean": 1590.3,
+      "std": 521.26,
+      "p1": 772.0,
+      "p99": 2949.0
+    }
+  },
+  "nonfinite_values": 0,
+  "all_zero_pixel_fraction": 0.0,
+  "pixel_fraction_train": {
+    "no data": 0.044,
+    "well-managed plantation": 0.1332,
+    "poorly-managed plantation": 0.2781,
+    "non-plantation": 0.1218,
+    "residential": 0.0319,
+    "background": 0.3841,
+    "uncertain": 0.0068
+  },
+  "pixel_fraction_val": {
+    "no data": 0.0468,
+    "well-managed plantation": 0.1116,
+    "poorly-managed plantation": 0.2869,
+    "non-plantation": 0.1228,
+    "residential": 0.02,
+    "background": 0.4023,
+    "uncertain": 0.0095
+  },
+  "images": [
+    "/home/sagemaker-user/GoTrain/workspace/profiles/m-cashew-plant/samples_true_color.png",
+    "/home/sagemaker-user/GoTrain/workspace/profiles/m-cashew-plant/samples_false_color.png",
+    "/home/sagemaker-user/GoTrain/workspace/profiles/m-cashew-plant/samples_ndvi.png"
+  ],
+  "agent_notes": ""
+}

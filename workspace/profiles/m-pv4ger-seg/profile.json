@@ -1,0 +1,64 @@
+{
+  "task": "m-pv4ger-seg",
+  "task_type": "segmentation",
+  "sensor": "aerial-rgb",
+  "gsd_m": 0.1,
+  "n_bands": 3,
+  "band_names": [
+    "R",
+    "G",
+    "B"
+  ],
+  "band_roles": {
+    "red": "R",
+    "green": "G",
+    "blue": "B"
+  },
+  "img_shape": [
+    3,
+    320,
+    320
+  ],
+  "splits": {
+    "train": 3000,
+    "val": 403
+  },
+  "classes": [
+    "no solar pv",
+    "solar pv"
+  ],
+  "band_stats": {
+    "R": {
+      "mean": 129.3,
+      "std": 55.68,
+      "p1": 27.0,
+      "p99": 240.0
+    },
+    "G": {
+      "mean": 135.72,
+      "std": 51.95,
+      "p1": 40.0,
+      "p99": 241.0
+    },
+    "B": {
+      "mean": 137.96,
+      "std": 49.54,
+      "p1": 49.0,
+      "p99": 241.0
+    }
+  },
+  "nonfinite_values": 0,
+  "all_zero_pixel_fraction": 0.0,
+  "pixel_fraction_train": {
+    "no solar pv": 0.8004,
+    "solar pv": 0.1996
+  },
+  "pixel_fraction_val": {
+    "no solar pv": 0.8005,
+    "solar pv": 0.1995
+  },
+  "images": [
+    "/home/sagemaker-user/GoTrain/workspace/profiles/m-pv4ger-seg/samples_true_color.png"
+  ],
+  "agent_notes": ""
+}

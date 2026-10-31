@@ -1,0 +1,28 @@
+{
+  "split": "val",
+  "tta": true,
+  "miou": 0.7780790815602584,
+  "per_class_iou": [
+    null,
+    0.7831,
+    0.813,
+    0.7504,
+    0.8398,
+    0.8037,
+    0.6785
+  ],
+  "pixel_accuracy": 0.8869573899732874,
+  "classes": [
+    "no data",
+    "well-managed plantation",
+    "poorly-managed plantation",
+    "non-plantation",
+    "residential",
+    "background",
+    "uncertain"
+  ],
+  "plots": [
+    "workspace/runs/m-cashew-plant/m-cashew-plant-0001/plots/confusion_tta.png",
+    "workspace/runs/m-cashew-plant/m-cashew-plant-0001/plots/failures_tta.png"
+  ]
+}

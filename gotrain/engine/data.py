@@ -79,11 +79,26 @@ def _load_arrays(task: str, split: str) -> dict:
 
     perm = CHANNELS.get(task, {}).get("permutation")
     if perm is not None:
-        d["x"], d["mean"], d["std"] = d["x"][:, perm], d["mean"][perm], d["std"][perm]
+        if perm == list(range(perm[0], perm[0] + len(perm))):
+            sel = slice(perm[0], perm[0] + len(perm))  # contiguous: a view, no copy of a multi-GB array
+        else:
+            sel = perm
+        d["x"], d["mean"], d["std"] = d["x"][:, sel], d["mean"][sel], d["std"][sel]
     d["channel_names"] = CHANNELS.get(task, {}).get("names", [f"C{i}" for i in range(d["x"].shape[1])])
     d["classes"] = CLASS_NAMES.get(task, [str(c) for c in d["classes"]])
     d["n_classes"] = int(d["n_classes"])
     return d
+
+
+def load_stats(task: str) -> tuple[np.ndarray, np.ndarray]:
+    """Train-split per-channel (mean, std), channel-selected like load_split, without loading the images."""
+    path = _cache_path(task, "train")
+    if not path.exists():
+        _build_cache(task, "train")
+    with np.load(path, allow_pickle=False) as npz:  # .npz members are read lazily: only mean/std here
+        mean, std = npz["mean"], npz["std"]
+    perm = CHANNELS.get(task, {}).get("permutation")
+    return (mean[perm], std[perm]) if perm is not None else (mean, std)
 
 
 def load_split(task: str, split: str) -> dict:

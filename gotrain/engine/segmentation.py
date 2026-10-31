@@ -1,7 +1,8 @@
 """Segmentation pieces used by train.py / evaluate.py: loss, IoU metrics, prediction with TTA.
 
 Masks are (N, H, W) integer class maps. D4 augmentation is applied to image and mask together;
-TTA undoes each transform on the logits before averaging.
+TTA undoes each transform on the logits before averaging. `ignore_index` (tasks.ignore_index) marks
+a label that is excluded from the loss and the metrics and never predicted.
 """
 
 import numpy as np
@@ -23,12 +24,18 @@ def logits(model, x: torch.Tensor, out_hw: tuple[int, int]) -> torch.Tensor:
     return out
 
 
-def loss_fn(out: torch.Tensor, y: torch.Tensor, label_smoothing: float = 0.0) -> torch.Tensor:
-    """Cross-entropy + soft Dice (mean over classes present in the batch)."""
+def loss_fn(out: torch.Tensor, y: torch.Tensor, label_smoothing: float = 0.0,
+            ignore_index: int | None = None) -> torch.Tensor:
+    """Cross-entropy + soft Dice (mean over classes present in the batch), ignored pixels excluded."""
     out = out.float()
-    ce = F.cross_entropy(out, y, label_smoothing=label_smoothing)
-    probs = out.softmax(1)
-    onehot = F.one_hot(y, out.shape[1]).permute(0, 3, 1, 2).float()
+    valid = torch.ones_like(y, dtype=torch.bool) if ignore_index is None else y != ignore_index
+    if not valid.any():
+        return out.sum() * 0.0  # batch fully unlabelled: no gradient signal
+    ce = F.cross_entropy(out, y, label_smoothing=label_smoothing,
+                         ignore_index=-100 if ignore_index is None else ignore_index)
+    v = valid.unsqueeze(1).float()
+    probs = out.softmax(1) * v
+    onehot = F.one_hot(torch.where(valid, y, 0), out.shape[1]).permute(0, 3, 1, 2).float() * v
     inter = (probs * onehot).sum((0, 2, 3))
     denom = probs.sum((0, 2, 3)) + onehot.sum((0, 2, 3))
     present = onehot.sum((0, 2, 3)) > 0
@@ -36,18 +43,25 @@ def loss_fn(out: torch.Tensor, y: torch.Tensor, label_smoothing: float = 0.0) ->
     return ce + (1 - dice[present]).mean()
 
 
-def confusion(pred: torch.Tensor | np.ndarray, y: torch.Tensor | np.ndarray, n_classes: int) -> np.ndarray:
-    """(n_classes, n_classes) pixel confusion matrix, rows = true class."""
+def confusion(pred: torch.Tensor | np.ndarray, y: torch.Tensor | np.ndarray, n_classes: int,
+              ignore_index: int | None = None) -> np.ndarray:
+    """(n_classes, n_classes) pixel confusion matrix, rows = true class; ignored pixels dropped."""
     pred, y = torch.as_tensor(pred).reshape(-1).long(), torch.as_tensor(y).reshape(-1).long()
+    if ignore_index is not None:
+        keep = y != ignore_index
+        pred, y = pred[keep], y[keep]
     cm = torch.bincount(y * n_classes + pred, minlength=n_classes * n_classes)
     return cm.reshape(n_classes, n_classes).cpu().numpy()
 
 
-def iou_scores(cm: np.ndarray) -> dict:
-    """Per-class IoU from a confusion matrix; mIoU averages classes that occur (in truth or prediction)."""
+def iou_scores(cm: np.ndarray, ignore_index: int | None = None) -> dict:
+    """Per-class IoU from a confusion matrix; mIoU averages classes that occur (in truth or prediction).
+    The ignored class gets None and is left out of the mean."""
     tp = np.diag(cm).astype(np.float64)
     union = cm.sum(0) + cm.sum(1) - tp
     iou = np.where(union > 0, tp / np.maximum(union, 1), np.nan)
+    if ignore_index is not None:
+        iou[ignore_index] = np.nan
     return {
         "miou": float(np.nanmean(iou)),
         "per_class_iou": [None if np.isnan(v) else round(float(v), 4) for v in iou],
@@ -56,8 +70,9 @@ def iou_scores(cm: np.ndarray) -> dict:
 
 
 @torch.no_grad()
-def predict(model, x_all, prepare, device, tta=False, batch_size=16) -> np.ndarray:
-    """Predicted class maps (N, H, W) uint8. tta=True averages softmax over all 8 D4 transforms."""
+def predict(model, x_all, prepare, device, tta=False, batch_size=16, ignore_index=None) -> np.ndarray:
+    """Predicted class maps (N, H, W) uint8. tta=True averages softmax over all 8 D4 transforms.
+    The ignored class is never predicted."""
     model.eval()
     out = []
     for i in range(0, len(x_all), batch_size):
@@ -69,10 +84,16 @@ def predict(model, x_all, prepare, device, tta=False, batch_size=16) -> np.ndarr
                                  for k in range(8)]).mean(0)
             else:
                 p = logits(model, xb, hw).float()
+        if ignore_index is not None:
+            p[:, ignore_index] = float("-inf")
         out.append(p.argmax(1).to(torch.uint8).cpu())
     return torch.cat(out).numpy()
 
 
-def per_image_iou(pred: np.ndarray, y: np.ndarray, n_classes: int) -> np.ndarray:
-    """mIoU of each image (classes absent from both truth and prediction are skipped)."""
-    return np.array([iou_scores(confusion(p, t, n_classes))["miou"] for p, t in zip(pred, y)])
+def per_image_iou(pred: np.ndarray, y: np.ndarray, n_classes: int, ignore_index: int | None = None) -> np.ndarray:
+    """mIoU of each image (classes absent from both truth and prediction are skipped; NaN if fully ignored)."""
+    out = []
+    for p, t in zip(pred, y):
+        cm = confusion(p, t, n_classes, ignore_index)
+        out.append(iou_scores(cm, ignore_index)["miou"] if cm.sum() else np.nan)
+    return np.array(out)

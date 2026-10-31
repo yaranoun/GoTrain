@@ -45,6 +45,11 @@ python -m gotrain.engine.evaluate workspace/runs/m-eurosat/m-eurosat-0002 --tta
 
 ## Gotchas
 - `m-eurosat` and `m-brick-kiln` on HF store **wrong band names** (geo-bench issues #28/#29). Load channels by position and reorder via `CHANNELS` in `tasks.py`. eurosat on-disk order: B01–B12 then B8A last.
+- `m-brick-kiln` on-disk order: B01 B02 B03 B04 B05 B07 B8A B08 B11 B12 TCI_R TCI_G TCI_B (no B06/B09/B10; TCI = 8-bit RGB copy, dropped) → 10 bands.
+- `m-cashew-plant`: S2 without B10 + cloud probability (dropped) → 12 bands; its "B8A" is an exact copy of B08. Class 0 = "no data" (unlabelled, image still has pixels) → `IGNORE_INDEX`: excluded from loss/mIoU, never predicted.
+- `m-cashew-plant` = 54 train / 16 val locations × 25 dates each (val locations never in train): tiny effective dataset; multi-date stacking is an option.
+- SSL4EO weights need all 13 bands: brick-kiln (10) and cashew (12) are refused until missing bands are filled in.
+- Evaluating while another run trains: fine (eval reads only train mean/std via `load_stats`), but two trainings at once can exhaust the 15 GB RAM.
 - GEO-Bench calls the val split `valid`; we use `val` (mapped in `data.py`).
 - SSL4EO weights (torchgeo) expect 13 canonical S2 bands, input /10000, 224px.
 - Strands tools can return images: `{"status": "success", "content": [{"text": ...}, {"image": {"format": "png", "source": {"bytes": ...}}}]}`.
@@ -57,4 +62,6 @@ profile → recall playbook → plan candidates → screen cheaply → train bes
 - Engine done for classification + segmentation; `profile_dataset` tool done.
 - m-eurosat val: ResNet18 ImageNet 64px **96.4%** (0.5 min); ResNet50 SSL4EO 224px **98.3%** (4.8 min). TTA gives no gain here (98.2%).
 - m-pv4ger-seg val: U-Net ResNet34 ImageNet 320px, 20 ep **0.955 mIoU**, **0.959 with TTA** (11.7 min).
+- m-brick-kiln val: ResNet18 ImageNet 64px, 30 ep **98.9%** acc (2.3 min); TTA 98.6% (no gain).
+- m-cashew-plant val (class 0 ignored): U-Net ResNet34 ImageNet 12 bands, 20 ep **0.738 mIoU**, **0.778 with TTA** (5.2 min); still improving at ep 20.
 - Next: see `docs/PLAN.md` (Step 0 onward). Stop before the creative phase and ask Aya.

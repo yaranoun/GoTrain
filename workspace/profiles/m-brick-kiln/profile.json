@@ -1,0 +1,119 @@
+{
+  "task": "m-brick-kiln",
+  "task_type": "classification",
+  "sensor": "sentinel-2",
+  "gsd_m": 10,
+  "n_bands": 10,
+  "band_names": [
+    "B01",
+    "B02",
+    "B03",
+    "B04",
+    "B05",
+    "B07",
+    "B08",
+    "B8A",
+    "B11",
+    "B12"
+  ],
+  "band_roles": {
+    "red": "B04",
+    "green": "B03",
+    "blue": "B02",
+    "nir": "B08",
+    "swir1": "B11",
+    "swir2": "B12"
+  },
+  "img_shape": [
+    10,
+    64,
+    64
+  ],
+  "splits": {
+    "train": 15063,
+    "val": 999
+  },
+  "classes": [
+    "not brick kiln",
+    "brick kiln"
+  ],
+  "band_stats": {
+    "B01": {
+      "mean": 568.44,
+      "std": 185.24,
+      "p1": 165.14,
+      "p99": 986.8
+    },
+    "B02": {
+      "mean": 665.89,
+      "std": 228.69,
+      "p1": 227.31,
+      "p99": 1260.75
+    },
+    "B03": {
+      "mean": 878.16,
+      "std": 269.51,
+      "p1": 311.0,
+      "p99": 1618.67
+    },
+    "B04": {
+      "mean": 812.71,
+      "std": 361.05,
+      "p1": 195.75,
+      "p99": 1971.57
+    },
+    "B05": {
+      "mean": 1134.26,
+      "std": 365.96,
+      "p1": 187.83,
+      "p99": 2205.0
+    },
+    "B07": {
+      "mean": 1957.88,
+      "std": 701.52,
+      "p1": 144.67,
+      "p99": 3309.33
+    },
+    "B08": {
+      "mean": 2038.1,
+      "std": 770.73,
+      "p1": 142.5,
+      "p99": 3514.56
+    },
+    "B8A": {
+      "mean": 2074.99,
+      "std": 790.8,
+      "p1": 132.5,
+      "p99": 3545.0
+    },
+    "B11": {
+      "mean": 1658.07,
+      "std": 786.73,
+      "p1": 92.42,
+      "p99": 3610.8
+    },
+    "B12": {
+      "mean": 1167.57,
+      "std": 698.7,
+      "p1": 68.67,
+      "p99": 3413.47
+    }
+  },
+  "nonfinite_values": 0,
+  "all_zero_pixel_fraction": 0.0,
+  "class_counts_train": {
+    "not brick kiln": 10000,
+    "brick kiln": 5063
+  },
+  "class_counts_val": {
+    "not brick kiln": 663,
+    "brick kiln": 336
+  },
+  "imbalance_ratio": 1.98,
+  "images": [
+    "/home/sagemaker-user/GoTrain/workspace/profiles/m-brick-kiln/samples_true_color.png",
+    "/home/sagemaker-user/GoTrain/workspace/profiles/m-brick-kiln/samples_false_color.png",
+    "/home/sagemaker-user/GoTrain/workspace/profiles/m-brick-kiln/samples_ndvi.png"
+  ],
+  "agent_notes": ""
+}

@@ -1,0 +1,5 @@
+{
+  "task": "m-brick-kiln",
+  "backbone": "resnet18",
+  "weights": "imagenet"
+}

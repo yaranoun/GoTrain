@@ -1,0 +1,18 @@
+{
+  "split": "val",
+  "tta": false,
+  "accuracy": 0.988988988988989,
+  "macro_f1": 0.9876585914240181,
+  "per_class_accuracy": [
+    0.9925,
+    0.9821
+  ],
+  "classes": [
+    "not brick kiln",
+    "brick kiln"
+  ],
+  "plots": [
+    "workspace/runs/m-brick-kiln/m-brick-kiln-0001/plots/confusion.png",
+    "workspace/runs/m-brick-kiln/m-brick-kiln-0001/plots/failures.png"
+  ]
+}

@@ -23,7 +23,7 @@ from gotrain.engine import segmentation as seg
 from gotrain.engine.augment import d4
 from gotrain.engine.data import load_split, normalize
 from gotrain.engine.models import build_model, encoder_params, zoo_entry
-from gotrain.engine.tasks import info
+from gotrain.engine.tasks import ignore_index, info
 
 SUPPORTED = ("classification", "segmentation")
 PRIMARY = {"classification": "accuracy", "segmentation": "miou"}
@@ -123,7 +123,7 @@ def train(run_dir: Path) -> dict:
     x_va = torch.from_numpy(va["x"])
     y_va = va["y"] if is_seg else va["y"].astype(np.int64)
     mean, std = torch.from_numpy(tr["mean"]).to(device), torch.from_numpy(tr["std"]).to(device)
-    n_classes = tr["n_classes"]
+    n_classes, ign = tr["n_classes"], ignore_index(task)
 
     model = build_model(cfg["backbone"], cfg["weights"], x_tr.shape[1], n_classes,
                         task_type=task_type, decoder=cfg["decoder"]).to(device)
@@ -161,7 +161,7 @@ def train(run_dir: Path) -> dict:
             xb = prepare(xb, cfg, mean, std)
             with torch.autocast(device.type, enabled=device.type == "cuda"):
                 if is_seg:
-                    loss = seg.loss_fn(seg.logits(model, xb, tuple(yb.shape[-2:])), yb, cfg["label_smoothing"])
+                    loss = seg.loss_fn(seg.logits(model, xb, tuple(yb.shape[-2:])), yb, cfg["label_smoothing"], ign)
                 else:
                     loss = F.cross_entropy(model(xb), yb, label_smoothing=cfg["label_smoothing"])
             opt.zero_grad(set_to_none=True)
@@ -173,8 +173,9 @@ def train(run_dir: Path) -> dict:
 
         extra = {}
         if is_seg:
-            pred = seg.predict(model, x_va, lambda x: prepare(x, cfg, mean, std), device, batch_size=cfg["batch_size"])
-            scores = seg.iou_scores(seg.confusion(pred, y_va, n_classes))
+            pred = seg.predict(model, x_va, lambda x: prepare(x, cfg, mean, std), device,
+                               batch_size=cfg["batch_size"], ignore_index=ign)
+            scores = seg.iou_scores(seg.confusion(pred, y_va, n_classes, ign), ign)
             val, extra = scores["miou"], {"per_class_iou": scores["per_class_iou"]}
         else:
             probs = predict(model, x_va, cfg, mean, std, device)

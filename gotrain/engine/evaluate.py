@@ -17,9 +17,9 @@ import torch
 from sklearn.metrics import confusion_matrix, f1_score
 
 from gotrain.engine import segmentation as seg
-from gotrain.engine.data import _load_arrays, load_split
+from gotrain.engine.data import _load_arrays, load_split, load_stats
 from gotrain.engine.models import build_model
-from gotrain.engine.tasks import band_roles, display_scale, info
+from gotrain.engine.tasks import band_roles, display_scale, ignore_index, info
 from gotrain.engine.viz import composite, views
 from gotrain.engine.train import predict, prepare, resolve_config
 
@@ -37,9 +37,9 @@ def _load_model(run_dir, task, cfg, device, split_data):
                         task_type=info(task)["type"], decoder=cfg["decoder"])
     model.load_state_dict(torch.load(run_dir / "checkpoint.pt", map_location=device, weights_only=True))
     model.to(device)
-    train_stats = load_split(task, "train")  # normalization always uses train stats
-    mean = torch.from_numpy(train_stats["mean"]).to(device)
-    std = torch.from_numpy(train_stats["std"]).to(device)
+    train_mean, train_std = load_stats(task)  # normalization always uses train stats
+    mean = torch.from_numpy(train_mean).to(device)
+    std = torch.from_numpy(train_std).to(device)
     return model, mean, std
 
 
@@ -53,7 +53,7 @@ def _model_and_masks(run_dir, task, cfg, device, split_data, tta):
     """Segmentation: predicted class maps (N, H, W) uint8."""
     model, mean, std = _load_model(run_dir, task, cfg, device, split_data)
     return seg.predict(model, torch.from_numpy(split_data["x"]), lambda x: prepare(x, cfg, mean, std),
-                       device, tta=tta, batch_size=cfg["batch_size"])
+                       device, tta=tta, batch_size=cfg["batch_size"], ignore_index=ignore_index(task))
 
 
 def _scores(y, pred, n_classes) -> dict:
@@ -76,8 +76,9 @@ def evaluate(run_dir: str, split: str = "val", tta: bool = False) -> dict:
 
     if info(task)["type"] == "segmentation":
         pred = _model_and_masks(run_dir, task, cfg, device, data, tta)
-        cm = seg.confusion(pred, data["y"], data["n_classes"])
-        scores = seg.iou_scores(cm)
+        ign = ignore_index(task)
+        cm = seg.confusion(pred, data["y"], data["n_classes"], ign)
+        scores = seg.iou_scores(cm, ign)
         pct = np.round(100 * cm / np.maximum(cm.sum(1, keepdims=True), 1)).astype(int)
         plot_confusion(pct, data["classes"], plots / f"confusion{suffix}.png", title="pixels, % of true class")
         plot_seg_failures(data, pred, task, plots / f"failures{suffix}.png")
@@ -107,7 +108,8 @@ def final_test(run_dir: str, tta: bool) -> dict:
     data = _load_arrays(task, "test")
     if info(task)["type"] == "segmentation":
         pred = _model_and_masks(run_dir, task, cfg, device, data, tta)
-        scores = seg.iou_scores(seg.confusion(pred, data["y"], data["n_classes"]))
+        ign = ignore_index(task)
+        scores = seg.iou_scores(seg.confusion(pred, data["y"], data["n_classes"], ign), ign)
         test_metrics = {k: scores[k] for k in ("miou", "per_class_iou", "pixel_accuracy")}
     else:
         probs = _model_and_probs(run_dir, task, cfg, device, data, tta)
@@ -177,9 +179,9 @@ def plot_failures(data, probs, task, path, n=16) -> None:
 
 def plot_seg_failures(data, pred, task, path, n=8) -> None:
     """Val images with the lowest IoU: image + true mask | image + predicted mask | errors in red."""
-    n_classes, y = data["n_classes"], data["y"]
-    ious = seg.per_image_iou(pred, y, n_classes)
-    worst = np.argsort(ious)[:n]
+    n_classes, y, ign = data["n_classes"], data["y"], ignore_index(task)
+    ious = seg.per_image_iou(pred, y, n_classes, ign)
+    worst = np.argsort(ious)[:n]  # NaN (fully ignored images) sort last
     names = list(data["channel_names"])
     rgb = next(iter(views(names, band_roles(task)).values()))
     mask_kw = dict(cmap="tab10", alpha=0.5, vmin=0, vmax=max(n_classes - 1, 1), interpolation="nearest")
@@ -198,7 +200,8 @@ def plot_seg_failures(data, pred, task, path, n=8) -> None:
             ax.imshow(np.ma.masked_equal(mask, 0), **mask_kw)  # class 0 transparent
             ax.set_title(title, fontsize=7)
         a_err.imshow(img.mean(-1), cmap="gray", vmin=0, vmax=1)
-        a_err.imshow(np.ma.masked_equal((pred[i] != y[i]).astype(np.uint8), 0), cmap="autumn", alpha=0.7,
+        wrong = (pred[i] != y[i]) if ign is None else (pred[i] != y[i]) & (y[i] != ign)
+        a_err.imshow(np.ma.masked_equal(wrong.astype(np.uint8), 0), cmap="autumn", alpha=0.7,
                      interpolation="nearest")
         a_err.set_title("errors", fontsize=7)
     fig.tight_layout()

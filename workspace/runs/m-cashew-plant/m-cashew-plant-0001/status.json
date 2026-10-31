@@ -1,0 +1,1 @@
+{"status": "done", "primary": "miou", "val": {"miou": 0.7378536746155113, "per_class_iou": [null, 0.7267, 0.7737, 0.6952, 0.8196, 0.7737, 0.6383]}, "best_epoch": 20, "train_loss_final": 0.44840549322820844, "gpu_minutes": 5.23}
