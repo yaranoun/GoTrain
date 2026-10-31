@@ -1,0 +1,2 @@
+{"type": "phase_start", "session_id": "m-cashew-plant__main__fixture", "phase": "level1"}
+{"type": "session_end", "session_id": "m-cashew-plant__main__fixture", "phase": "level1", "tokens": {"inputTokens": 120000, "outputTokens": 8000, "totalTokens": 128000}}
