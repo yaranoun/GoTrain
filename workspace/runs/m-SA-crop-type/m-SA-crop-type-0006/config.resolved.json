@@ -1,0 +1,58 @@
+{
+  "task": "m-SA-crop-type",
+  "backbone": "resnet18",
+  "weights": "ssl4eo_moco",
+  "decoder": "unet",
+  "norm": "div10000",
+  "img_size": null,
+  "augment": [
+    "d4"
+  ],
+  "optimizer": "adamw",
+  "lr": 0.0003,
+  "weight_decay": 0.05,
+  "batch_size": 16,
+  "epochs": 8,
+  "warmup_epochs": 1,
+  "label_smoothing": 0.0,
+  "freeze_backbone": false,
+  "train_fraction": 1.0,
+  "seed": 0,
+  "time_limit_min": 6.0,
+  "band_fill": "norm_mean",
+  "input_bands": {
+    "bands": [
+      "B01",
+      "B02",
+      "B03",
+      "B04",
+      "B05",
+      "B06",
+      "B07",
+      "B08",
+      "B8A",
+      "B09",
+      "B10",
+      "B11",
+      "B12"
+    ],
+    "source": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      -1,
+      10,
+      11
+    ],
+    "missing": [
+      "B10"
+    ]
+  }
+}

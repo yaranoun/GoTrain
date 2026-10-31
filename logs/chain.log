@@ -474,3 +474,96 @@ a39fdb49ac46dc2390bef54678f836c0e5691e39101c10d90585c90ff89107eb  experiments/pl
 a39fdb49ac46dc2390bef54678f836c0e5691e39101c10d90585c90ff89107eb  experiments/playbook-ab/playbook-snapshot.jsonl
 2026-10-31T22:52:33Z done: snapshot
 2026-10-31T22:52:33Z start: commit playbook snapshot after #4
+2026-10-31T22:52:33Z committed: chain: playbook snapshot after #4
+2026-10-31T22:52:33Z committed: chain: playbook snapshot after #4
+2026-10-31T22:52:34Z done: commit playbook snapshot after #4
+2026-10-31T22:52:34Z start: build_cache m-SA-crop-type
+all requested caches exist
+2026-10-31T22:52:37Z done: build_cache m-SA-crop-type
+2026-10-31T22:52:37Z start: session m-SA-crop-type main level1,reflect --budget 60 --playbook-snapshot experiments/playbook-ab/playbook-snapshot.jsonl
+Session m-SA-crop-type__main__chain · arm main · B 60.0 (R 6.0, P1 45.0, P2 15.0) · workspace /home/sagemaker-user/GoTrain/workspace
+[level1] transcript: /home/sagemaker-user/GoTrain/workspace/agent_logs/m-SA-crop-type__main__chain.level1.jsonl
+
+Tool #1: profile_dataset
+
+Tool #2: list_backbones
+
+Tool #3: get_budget
+
+Tool #4: read_playbook
+
+Tool #5: save_profile_notes
+
+Tool #6: compose_config
+
+Tool #7: launch_training
+
+Tool #8: wait_run
+
+Tool #9: launch_training
+
+Tool #10: wait_run
+
+Tool #11: launch_training
+
+Tool #12: wait_run
+
+Tool #13: launch_training
+
+Tool #14: wait_run
+
+Tool #15: launch_training
+
+Tool #16: wait_run
+
+Tool #17: launch_training
+
+Tool #18: wait_run
+
+Tool #19: launch_training
+
+Tool #20: wait_run
+
+Tool #21: get_budget
+The Level 1 pot has 5.3 min left. That's less than the 6-min cap for a decision run, so I can't launch another one.
+
+**Summary**
+- **Best run:** m-SA-crop-type-0007 (resnet18 with SSL4EO-MoCo weights, FPN decoder, lr 3e-4, 8 epochs) reached val mIoU 0.402.
+- **Incumbent:** the harness still lists run 0001 (resnet18 with SSL4EO weights and the default UNet decoder, 0.382). No change beat the measured noise (needed z ≥ 2), so nothing was marked kept.
+- **Noise:** the seed repeat of 0001 scored 0.333, 0.049 lower. That is larger than every difference between my runs, so the ranking below is not reliable.
+- **Weights and backbone:** SSL4EO resnet18 scored 0.382 against 0.359 for the default resnet34 with ImageNet weights. That is within noise.
+- **Learning rate:** 1e-3 gave 0.341 and 3e-4 gave 0.387. I did not run 5e-4 with the 8-epoch schedule, so that comparison is only against the 20-epoch run 0001.
+- **Decoder:** FPN beat UNet at lr 3e-4 (0.402 against 0.387), which is the opposite of playbook lesson L005. This is also within noise.
+- **Epoch budget:** the 6-min cap stopped runs at about 8–9 epochs, so the model was still undertrained.
+
+I didn't use either of the two screen runs.[level1] end: 21 tool calls, 41.3 min, tokens {'inputTokens': 98526, 'outputTokens': 3307, 'totalTokens': 181886} (transcript m-SA-crop-type__main__chain.level1.md)
+[reflect] transcript: /home/sagemaker-user/GoTrain/workspace/agent_logs/m-SA-crop-type__main__chain.reflect.jsonl
+
+Tool #1: get_budget
+
+Tool #2: query_ledger
+
+Tool #3: mine_effects
+
+Tool #4: read_playbook
+
+Tool #5: request_knob
+I wrote no lessons this session. The five measured effects all had |z| below 1, and code refuses anything under 1.
+
+- **Learning rate, 1e-3 → 3e-4 (z +0.91):** the direction matches the existing lesson L002, and code already counts it as a re-test of L002. It is also too weak to write up.
+- **Learning rate, 5e-4 → 1e-3 (z −0.62):** too weak.
+- **Learning rate, 5e-4 → 3e-4 (z +0.29):** too weak, and it also counts as a re-test of L002.
+- **Backbone and weights, resnet18 SSL4EO → resnet34 ImageNet (z −0.47):** too weak. It is recorded as a re-test of L001, and the direction agrees with it.
+- **Decoder, UNet → FPN (z +0.32):** too weak. Its direction is opposite to L005, which said FPN hurts, but it is recorded as a re-test of L005. The disagreement is well inside the noise.
+
+The main finding is about noise. A seed repeat of the same config scored 0.3326 against 0.3820, so sigma is about 0.05 mIoU. That is larger than any knob effect I measured. Single 6-minute runs can't separate these knobs on this dataset.
+
+I logged one knob request, `seed_repeats_per_decision`. It would let me average 2–3 seeds per arm, or use a shorter fixed-epoch proxy, so effects of this size become measurable.[reflect] end: 5 tool calls, 0.2 min, tokens {'inputTokens': 7154, 'outputTokens': 901, 'totalTokens': 17442} (transcript m-SA-crop-type__main__chain.reflect.md)
+2026-10-31T23:34:11Z done: session m-SA-crop-type main level1,reflect --budget 60 --playbook-snapshot experiments/playbook-ab/playbook-snapshot.jsonl
+2026-10-31T23:34:11Z start: verify m-SA-crop-type main
+transcript: ok (6 agent rows, 7 launches)
+ledger: ok (7 rows)
+noise: ok (6 decision runs, sigma_seed recorded)
+pot: ok (P1 used 39.74/45, P2 used 0.00/15, 0 screens)
+2026-10-31T23:34:13Z done: verify m-SA-crop-type main
+2026-10-31T23:34:13Z start: commit m-SA-crop-type ON level1 + reflect
