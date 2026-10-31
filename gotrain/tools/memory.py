@@ -11,6 +11,7 @@ import json
 from strands import tool
 
 from gotrain import playbook as pb
+from gotrain import runs
 from gotrain.session import Session
 from gotrain.tools._result import EXPECTED, error, ok
 
@@ -20,28 +21,28 @@ BUCKET_LABEL = {"apply": "apply", "other_context": "other context", "to_test": "
 
 
 def _short(v) -> str:
-    return "derived" if v is None else json.dumps(v) if isinstance(v, (list, dict)) else str(v)
+    return "null" if v is None else json.dumps(v) if isinstance(v, (list, dict)) else str(v)
 
 
-def change_text(keys: list[str], before: dict, after: dict) -> str:
-    return ", ".join(f"{k} {_short(before.get(k))}->{_short(after.get(k))}" for k in keys)
+def change_text(before: dict, after: dict) -> str:
+    return ", ".join(f"{k} {_short(before.get(k))}->{_short(after.get(k))}" for k in after)
+
+
+def _fit(line: str) -> str:
+    return line if len(line) <= LINE else line[:LINE - 1] + "…"
 
 
 def lesson_line(L: dict, bucket: str) -> str:
-    line = (f"{L['lesson_id']} [{BUCKET_LABEL.get(bucket, bucket)}] {L['status']} conf {L['confidence']:.2f}, "
-            f"{L['group']}: {change_text(L['keys'], L['from'], L['to'])} {'helps' if L['sign'] > 0 else 'hurts'}, "
-            f"z {L['effect']['z']:+.1f}, context {L['context'] or 'any'} | {L['statement']}")
-    return line if len(line) <= LINE else line[:LINE - 1] + "…"
+    return _fit(f"{L['lesson_id']} [{BUCKET_LABEL.get(bucket, bucket)}] {L['status']} conf {L['confidence']:.2f}, "
+                f"{L['group']}: {change_text(L['baseline'], L['intervention'])} "
+                f"{'helps' if L['sign'] > 0 else 'hurts'}, z {L['effect']['z']:+.1f}, context {L['context'] or 'any'}"
+                f" | {L['statement']}")
 
 
 def effect_line(e: dict) -> str:
-    if "unmeasured" in e:
-        line = f"{e['effect_id']} [not measurable] {e['unmeasured']}"
-    else:
-        tag = e["kind"].replace("_", " ") + (f", already tests {', '.join(e['tests'])}" if e["tests"] else "")
-        line = (f"{e['effect_id']} [{tag}] {e['group']}: {change_text(e['keys'], e['from'], e['to'])}, "
+    tag = e["kind"].replace("_", " ") + (f", already tests {', '.join(e['tests'])}" if e["tests"] else "")
+    return _fit(f"{e['effect_id']} [{tag}] {e['group']}: {change_text(e['baseline'], e['intervention'])}, "
                 f"delta {e['delta']:+.4f}, sigma {e['sigma']:.4f}, z {e['z']:+.2f}, context {e['context'] or 'any'}")
-    return line if len(line) <= LINE else line[:LINE - 1] + "…"
 
 
 def paginate(lines: list[str], page: int) -> tuple[list[str], str]:
@@ -51,18 +52,18 @@ def paginate(lines: list[str], page: int) -> tuple[list[str], str]:
 
 
 def lesson_text(L: dict, bucket: str | None) -> str:
-    keep = ("lesson_id", "statement", "intended_scope", "status", "confidence", "group", "keys", "baseline",
-            "intervention", "from", "to", "preferred", "sign", "effect", "metric", "context", "evidence",
-            "evidence_scope", "born_on", "born_status", "times_applied", "confirmations", "refutations", "exceptions")
+    keep = ("lesson_id", "statement", "intended_scope", "status", "confidence", "group", "baseline", "intervention",
+            "preferred", "sign", "effect", "metric", "context", "evidence", "evidence_scope", "born_on",
+            "born_status", "times_applied", "confirmations", "refutations", "exceptions")
     d = {k: L.get(k) for k in keep}
     d["bucket_here"] = bucket
-    d["tests"] = [{k: t[k] for k in ("dataset", "outcome", "delta", "sigma", "z", "applied", "retest")}
+    d["tests"] = [{k: t[k] for k in ("dataset", "result", "delta", "sigma", "z", "applied", "retest")}
                   for t in L.get("tests", [])]
     return json.dumps(d, indent=1)
 
 
 def make_tools(session: Session) -> list:
-    """The memory tools, bound to the session (its task, its runs, its playbook file)."""
+    """The memory tools, bound to the session (its task, its runs, its playbook paths)."""
 
     @tool
     def read_playbook(lesson_id: str = "", page: int = 1) -> dict:
@@ -76,57 +77,57 @@ def make_tools(session: Session) -> list:
             page: page of the list, from one.
         """
         try:
-            lessons = pb.read(session.playbook_path)
+            lessons = pb.read(session.playbook_read_path)
             if not lessons:
                 return ok("The playbook is empty: no lessons from earlier datasets. Draft the first config yourself.")
             r = pb.retrieve(session, lessons=lessons)
             where = {lid: b for b, ids in r["buckets"].items() for lid in ids}
             if lesson_id.strip():
                 L = lessons.get(lesson_id.strip())
-                if L is None:
-                    return error(f"unknown lesson_id '{lesson_id}'")
-                if where.get(L["lesson_id"]) == "hidden":
-                    return error(f"{lesson_id} is out of scope for this dataset (hidden)")
+                if L is None or where.get(L["lesson_id"]) == "hidden":
+                    return error(f"unknown lesson_id '{lesson_id}' (or out of scope for this dataset)")
                 return ok(lesson_text(L, where.get(L["lesson_id"])))
             items = [lesson_line(lessons[lid], b) for b in ("apply", "other_context", "to_test", "avoid")
                      for lid in r["buckets"][b]]
-            counts = {b: len(v) for b, v in r["buckets"].items()}
-            head = (f"Playbook: {len(lessons)} lessons. This dataset: {r['scope']['task_type']}, "
-                    f"{r['scope']['sensor_family']}, {r['scope']['band_family']}, {r['scope']['gsd_bucket']}; "
-                    f"first-config weights family W = {r['W']}.\n"
-                    f"Buckets: apply {counts['apply']}, other context {counts['other_context']}, to test "
-                    f"{counts['to_test']}, avoid {counts['avoid']}, hidden {counts['hidden']} (out of scope, not shown).")
+            c, s = {b: len(v) for b, v in r["buckets"].items()}, r["scope"]
+            head = (f"Playbook: {len(lessons)} lessons. This dataset: {s['task_type']}, {s['sensor_family']}, "
+                    f"{s['band_family']}, {s['gsd_bucket']}; first-config weights family W = {r['W']}.\n"
+                    f"Buckets: apply {c['apply']}, other context {c['other_context']}, to test {c['to_test']}, "
+                    f"avoid {c['avoid']}, hidden {c['hidden']} (out of scope, not shown).")
             if not items:
                 return ok(head + "\nNo lesson is in scope here. Draft the first config yourself.")
             body, footer = paginate(items, page)
             return ok("\n".join([head, *body, f"{footer}. Full text: read_playbook(lesson_id=...). "
-                                                "compose_config builds the first config from the apply bucket."]))
+                                              "compose_config builds the first config from the apply bucket."]))
         except EXPECTED as e:
             return error(str(e))
 
     @tool
-    def compose_config(draft: dict | None = None) -> dict:
+    def compose_config(draft_run_id: str = "") -> dict:
         """The first config of this dataset, built by code from the lessons in the apply bucket, and its re-test
-        partner: the same config without the applied lesson with the most at stake, or (when nothing applies) your
-        draft plus the top lesson to test. Launch the first config unchanged as your first decision run, and the
-        partner as your second.
+        partner (the same config without the applied lesson with the most at stake). When no lesson applies, launch
+        your own draft first, then call this again with its run id: code then builds the partner from your draft
+        plus the top lesson to test. Launch each config unchanged.
 
         Args:
-            draft: your own first config, only when compose_config returned none (no lesson applies). Code then
-                builds its re-test partner, e.g. {"backbone": "<backbone>", "weights": "<weights>"}.
+            draft_run_id: the run id of your drafted first run, only when no lesson applied.
         """
         try:
-            op = pb.opening(session, draft=draft or None)
+            draft_id = draft_run_id.strip()
+            draft = runs._get(draft_id, session).get("overrides") if draft_id else None
+            if draft_id and draft is None:
+                return error(f"{draft_id} has no recorded overrides")
+            op = pb.opening(session, draft=draft)
+            pb.opening_record(session, op, draft_id or None)
         except EXPECTED as e:
             return error(str(e))
-        lines = []
-        b = op["buckets"]
-        if op["A"] is None and not draft:
+        b, lines = op["buckets"], []
+        if op["A"] is None:
             lines.append(f"No lesson applies here (apply {b['apply']}, to test {b['to_test']}). Draft your first "
-                         f"config yourself (list_backbones), then call compose_config(draft=<your config>) to get "
-                         f"its re-test partner.")
-        elif draft:
-            lines.append(f"First config A = your draft: {json.dumps(op['A'])}"
+                         f"config yourself (list_backbones) and launch it; then call compose_config(draft_run_id=...) "
+                         f"with its run id to get its re-test partner.")
+        elif draft_id:
+            lines.append(f"First config A = your draft {draft_id}: {json.dumps(op['A'])}"
                          + (f" (it already has the values of {', '.join(op['applied'])})" if op["applied"] else ""))
         else:
             lines.append(f"First config A, from lessons {', '.join(op['applied'])}: {json.dumps(op['A'])}. "
@@ -137,9 +138,11 @@ def make_tools(session: Session) -> list:
         rt = op["retest"]
         if rt is not None:
             what = "without" if rt["kind"] == "A-" else "with"
-            lines.append(f"Re-test partner {rt['kind']} = A {what} lesson {rt['lesson_id']}: {json.dumps(rt['config'])}. "
-                         f"Launch it as your second decision run, with A's run as parent_run_id.")
-        elif op["A"] is not None or draft:
+            parent = draft_id or "A's run"
+            lines.append(f"Re-test partner {rt['kind']} = A {what} lesson {rt['lesson_id']}: "
+                         f"{json.dumps(rt['config'])}. Launch it unchanged as your next decision run, with "
+                         f"parent_run_id = {parent}.")
+        elif op["A"] is not None:
             lines.append("No re-test partner: no lesson can be re-tested here.")
         lines.append(f"Weights family W of {'A' if op['A'] is not None else 'the defaults'}: {op['W']}.")
         return ok("\n".join(lines))
@@ -196,10 +199,7 @@ def make_tools(session: Session) -> list:
             name: short name of the knob.
             rationale: what you would test with it and why.
         """
-        try:
-            pb.request_knob(session, name, rationale)
-        except EXPECTED as e:
-            return error(str(e))
-        return ok(f"Knob request '{name.strip()}' logged.")
+        pb.request_knob(session, name, rationale)
+        return ok(f"Knob request '{(name or '').strip()}' logged.")
 
     return [read_playbook, compose_config, mine_effects, add_lesson, request_knob]

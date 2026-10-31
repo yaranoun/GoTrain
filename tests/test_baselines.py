@@ -40,7 +40,8 @@ def test_baselines_are_hidden_from_the_agent():
                   REPO / "gotrain" / "run.py", REPO / "gotrain" / "hooks.py", *PROMPTS.glob("*.md")]
     for p in agent_code:
         assert "baselines" not in p.read_text().lower(), p
-    s = sess.start("m-eurosat", "dev", ("level1",), 10.0, gotrain.WORKSPACE / "playbook.jsonl", False, "test",
+    s = sess.start("m-eurosat", "dev", ("level1",), 10.0, gotrain.WORKSPACE / "playbook.jsonl",
+                   gotrain.WORKSPACE / "playbook.jsonl", "test",
                    scope("m-eurosat"), session_id="baselines-hidden")
     for name, t in available_tools(s).items():
         spec = json.dumps(t.tool_spec).lower()
