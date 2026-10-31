@@ -1,0 +1,11 @@
+{
+  "primary": "accuracy",
+  "val": {
+    "accuracy": 0.985
+  },
+  "best_epoch": 18,
+  "epochs_run": 20,
+  "train_loss_final": 0.5130722522735596,
+  "gpu_minutes": 1.04,
+  "stopped_early": null
+}

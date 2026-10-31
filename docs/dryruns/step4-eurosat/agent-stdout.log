@@ -1,0 +1,70 @@
+Transcript: /home/sagemaker-user/GoTrain/.sandbox/workspace/agent_logs/m-eurosat-20261031T124846Z.jsonl
+Workspace: /home/sagemaker-user/GoTrain/.sandbox/workspace (SANDBOX)
+
+Tool #1: profile_dataset
+
+Tool #2: list_backbones
+
+Tool #3: get_budget
+
+Tool #4: save_profile_notes
+
+Tool #5: launch_training
+
+Tool #6: wait_run
+
+Tool #7: launch_training
+
+Tool #8: wait_run
+Runs are cheap. Try a bigger backbone at a larger image size.
+Tool #9: launch_training
+
+Tool #10: wait_run
+
+Tool #11: evaluate_run
+
+Tool #12: record_diagnosis
+
+Tool #13: get_budget
+
+Tool #14: launch_training
+
+Tool #15: wait_run
+Big gain. Try resnet50 SSL4EO.
+Tool #16: launch_training
+
+Tool #17: wait_run
+
+Tool #18: launch_training
+
+Tool #19: wait_run
+
+Tool #20: evaluate_run
+
+Tool #21: record_diagnosis
+
+Tool #22: launch_training
+
+Tool #23: wait_run
+Budget is now nearly spent (~0.7 min left). Finalize the best run, 0006, without TTA.
+Tool #24: finalize
+I called `finalize` once, as instructed. The sandbox refused it, so there is no test score and the task is not formally closed.
+
+The run I would have submitted is `m-eurosat-0006`, with TTA off. It is ResNet-18 with SSL4EO MoCo (Sentinel-2) weights at 224 px, 20 epochs, lr 0.0005 and label smoothing 0.1. Its validation accuracy was 98.90%. TTA gave 98.80% on that run, so I left it off.
+
+Seven runs used roughly 7.3 of the 8 GPU minutes:
+
+| Run | Setup | Val accuracy |
+|---|---|---|
+| 0001 | ResNet-18, ImageNet weights, 64 px, 15 epochs | 96.4% |
+| 0002 | Same, 40 epochs, label smoothing | 96.8% |
+| 0003 | ResNet-50, ImageNet weights, 128 px | 97.2% (97.5% with TTA) |
+| 0004 | ResNet-18, SSL4EO weights, 112 px | 98.5% |
+| 0005 | ResNet-50, SSL4EO weights, 112 px | 98.5% |
+| 0006 | ResNet-18, SSL4EO weights, 224 px | 98.9% |
+| 0007 | Same as 0006, 30 epochs, seed 1 | 98.7% |
+
+- **What helped:** The Sentinel-2 pretrained weights gave the largest jump, about 1.3 points over ImageNet ResNet-50. The native 224 px input added another 0.4 points.
+- **What didn't:** The larger SSL4EO backbone and the longer schedule did not improve on 0006.
+- **Remaining errors:** On 0006 they were mostly Permanent Crop predicted as Herbaceous Vegetation, which look like genuinely ambiguous labels.
+Session end. Finalized: False. Transcript: /home/sagemaker-user/GoTrain/.sandbox/workspace/agent_logs/m-eurosat-20261031T124846Z.jsonl (+ m-eurosat-20261031T124846Z.md)

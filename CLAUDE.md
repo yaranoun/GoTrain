@@ -73,6 +73,7 @@ profile → recall playbook → plan candidates → screen cheaply → train bes
 - **Tasks:** classification `m-eurosat`, `m-brick-kiln`; segmentation `m-pv4ger-seg`, `m-cashew-plant`.
 - Engine done for classification + segmentation; Step 3 tools done (`notebooks/step3_tools_check.ipynb`). Default budget 60 GPU min/task (`runs.set_budget`, operator only).
 - Step 4 agent loop done (`gotrain/run.py`). Sandbox dry run on m-eurosat, 8 GPU min: 7 runs, 96.4% → 98.9% val (ResNet18 SSL4EO 224px), finalize attempted on the best run, 24 tool calls, 9 min, ~265k tokens. finalize is refused until 3 runs finished or <20% budget left (`--min-runs`).
+- Dry-run evidence (sandbox, no test touched): `docs/dryruns/step4-eurosat/` (transcript, ledger, runs, logs). No real agent run yet: workflows + cross-dataset memory come first.
 - m-eurosat val: ResNet18 ImageNet 64px **96.4%** (0.5 min); ResNet50 SSL4EO 224px **98.3%** (4.8 min). TTA gives no gain here (98.2%).
 - m-pv4ger-seg val: U-Net ResNet34 ImageNet 320px, 20 ep **0.955 mIoU**, **0.959 with TTA** (11.7 min).
 - m-brick-kiln val: ResNet18 ImageNet 64px, 30 ep **98.9%** acc (2.3 min); TTA 98.6% (no gain).

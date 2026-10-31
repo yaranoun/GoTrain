@@ -1,0 +1,10 @@
+{
+  "task": "m-eurosat",
+  "backbone": "resnet18",
+  "epochs": 20,
+  "img_size": 224,
+  "label_smoothing": 0.1,
+  "lr": 0.0005,
+  "weights": "ssl4eo_moco",
+  "time_limit_min": 4.0
+}

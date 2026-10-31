@@ -1,0 +1,33 @@
+run_dir: /home/sagemaker-user/GoTrain/.sandbox/workspace/runs/m-eurosat/m-eurosat-0003
+/opt/conda/lib/python3.12/site-packages/torch/optim/lr_scheduler.py:192: UserWarning: Detected call of `lr_scheduler.step()` before `optimizer.step()`. In PyTorch 1.1.0 and later, you should call them in the opposite order: `optimizer.step()` before `lr_scheduler.step()`.  Failure to do this will result in PyTorch skipping the first value of the learning rate schedule. See more details at https://pytorch.org/docs/stable/optim.html#how-to-adjust-learning-rate
+  warnings.warn(
+{"epoch": 1, "train_loss": 2.223881898387786, "val_accuracy": 0.559, "lr": 0.0005, "elapsed_s": 4.3}
+{"epoch": 2, "train_loss": 1.4198989848936758, "val_accuracy": 0.842, "lr": 0.0004985344892885899, "elapsed_s": 7.8}
+{"epoch": 3, "train_loss": 0.8184506873930654, "val_accuracy": 0.876, "lr": 0.0004941551389275216, "elapsed_s": 11.3}
+{"epoch": 4, "train_loss": 0.7110175548061248, "val_accuracy": 0.933, "lr": 0.0004869132927957006, "elapsed_s": 14.8}
+{"epoch": 5, "train_loss": 0.6742543039783355, "val_accuracy": 0.947, "lr": 0.0004768938549177393, "elapsed_s": 18.3}
+{"epoch": 6, "train_loss": 0.6375301595657102, "val_accuracy": 0.944, "lr": 0.0004642142940418973, "elapsed_s": 21.9}
+{"epoch": 7, "train_loss": 0.5983691600061232, "val_accuracy": 0.951, "lr": 0.00044902326642641094, "elapsed_s": 25.3}
+{"epoch": 8, "train_loss": 0.5933604798009319, "val_accuracy": 0.953, "lr": 0.0004314988729807827, "elapsed_s": 28.8}
+{"epoch": 9, "train_loss": 0.5801629347185935, "val_accuracy": 0.953, "lr": 0.00041184657119545693, "elapsed_s": 32.3}
+{"epoch": 10, "train_loss": 0.5792257843479034, "val_accuracy": 0.956, "lr": 0.00039029676634059563, "elapsed_s": 35.8}
+{"epoch": 11, "train_loss": 0.5691029141026158, "val_accuracy": 0.958, "lr": 0.00036710211017494757, "elapsed_s": 39.3}
+{"epoch": 12, "train_loss": 0.5484707105544305, "val_accuracy": 0.963, "lr": 0.00034253453883497867, "elapsed_s": 42.8}
+{"epoch": 13, "train_loss": 0.5437431893041057, "val_accuracy": 0.969, "lr": 0.0003168820846323053, "elapsed_s": 46.3}
+{"epoch": 14, "train_loss": 0.5418692019677931, "val_accuracy": 0.968, "lr": 0.00029044549913819124, "elapsed_s": 49.9}
+{"epoch": 15, "train_loss": 0.5417326823357613, "val_accuracy": 0.963, "lr": 0.0002635347271463544, "elapsed_s": 53.3}
+{"epoch": 16, "train_loss": 0.5409067773049877, "val_accuracy": 0.962, "lr": 0.00023646527285364562, "elapsed_s": 56.7}
+{"epoch": 17, "train_loss": 0.5335246901358327, "val_accuracy": 0.958, "lr": 0.00020955450086180888, "elapsed_s": 60.2}
+{"epoch": 18, "train_loss": 0.5360634999890481, "val_accuracy": 0.965, "lr": 0.00018311791536769484, "elapsed_s": 63.6}
+{"epoch": 19, "train_loss": 0.5348989886622275, "val_accuracy": 0.964, "lr": 0.00015746546116502145, "elapsed_s": 67.1}
+{"epoch": 20, "train_loss": 0.5334243543686406, "val_accuracy": 0.963, "lr": 0.0001328978898250525, "elapsed_s": 70.5}
+{"epoch": 21, "train_loss": 0.5254108982701455, "val_accuracy": 0.967, "lr": 0.00010970323365940444, "elapsed_s": 73.9}
+{"epoch": 22, "train_loss": 0.5195651246655372, "val_accuracy": 0.972, "lr": 8.815342880454311e-05, "elapsed_s": 77.4}
+{"epoch": 23, "train_loss": 0.5266996679767486, "val_accuracy": 0.967, "lr": 6.850112701921734e-05, "elapsed_s": 80.9}
+{"epoch": 24, "train_loss": 0.5267943259208433, "val_accuracy": 0.971, "lr": 5.097673357358906e-05, "elapsed_s": 84.4}
+{"epoch": 25, "train_loss": 0.5172987041934844, "val_accuracy": 0.971, "lr": 3.578570595810274e-05, "elapsed_s": 87.8}
+{"epoch": 26, "train_loss": 0.5211494526555461, "val_accuracy": 0.97, "lr": 2.310614508226072e-05, "elapsed_s": 91.2}
+{"epoch": 27, "train_loss": 0.5194430678121505, "val_accuracy": 0.967, "lr": 1.3086707204299414e-05, "elapsed_s": 94.7}
+{"epoch": 28, "train_loss": 0.5212654356033571, "val_accuracy": 0.968, "lr": 5.8448610724783356e-06, "elapsed_s": 98.1}
+{"epoch": 29, "train_loss": 0.5227188064206031, "val_accuracy": 0.968, "lr": 1.4655107114101007e-06, "elapsed_s": 101.6}
+{"epoch": 30, "train_loss": 0.5223358350415384, "val_accuracy": 0.971, "lr": 0.0, "elapsed_s": 105.0}

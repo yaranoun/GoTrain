@@ -1,0 +1,10 @@
+{
+  "task": "m-eurosat",
+  "backbone": "resnet50",
+  "epochs": 30,
+  "label_smoothing": 0.1,
+  "lr": 0.0005,
+  "weights": "imagenet",
+  "img_size": 128,
+  "time_limit_min": 7.2
+}

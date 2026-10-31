@@ -1,0 +1,1 @@
+{"status": "done", "primary": "accuracy", "val": {"accuracy": 0.972}, "best_epoch": 22, "epochs_run": 30, "train_loss_final": 0.5223358350415384, "gpu_minutes": 1.75, "stopped_early": null}
