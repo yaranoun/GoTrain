@@ -84,8 +84,8 @@ def test_protocol_values_must_be_set(tmp_path):
     mod = _module()
     with pytest.raises(SystemExit, match="fixed at F1"):
         mod.read_protocol(FIX / "PROTOCOL_TBD.md")
-    with pytest.raises(SystemExit, match="fixed at F1"):  # the real draft: B, R and the hash wait for F1
-        mod.read_protocol(SCRIPT.parent / "PROTOCOL.md")
+    frozen = mod.read_protocol(SCRIPT.parent / "PROTOCOL.md")  # frozen at F1 (31 Oct): B = 60, R = 6
+    assert (frozen["B"], frozen["R"], frozen["P1"]) == (60.0, 6.0, 45.0)
     p = tmp_path / "P.md"
     p.write_text("- B = 10\n- R = 1\n- analyze.py = TBD at F1\n")
     with pytest.raises(SystemExit, match="analyze.py hash"):
