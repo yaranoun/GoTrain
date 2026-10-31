@@ -50,6 +50,7 @@ python -m gotrain.engine.evaluate workspace/runs/m-eurosat/m-eurosat-0002 --tta
 profile → recall playbook → plan candidates → screen cheaply → train best → diagnose failures (look at images) → iterate within budget → finalize once (TTA, test vault, model card) → reflect (write lessons).
 
 ## Status (31 Oct)
+- **Tasks:** classification `m-eurosat`, `m-brick-kiln`; segmentation `m-pv4ger-seg`, `m-cashew-plant`.
 - Engine done for classification; `profile_dataset` tool done.
 - m-eurosat val: ResNet18 ImageNet 64px **96.4%** (0.5 min); ResNet50 SSL4EO 224px **98.3%** (4.8 min).
 - Next: see `docs/PLAN.md` (Step 0 onward). Stop before the creative phase and ask Aya.

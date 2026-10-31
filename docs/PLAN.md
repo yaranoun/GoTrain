@@ -3,8 +3,7 @@
 Hackathon: 31 Oct – 1 Nov 2026. Each step has a **gate**: don't start the next step until it passes.
 Commit + push after every step (results included).
 
-## Decision needed now (Aya)
-**The 4 tasks.** Default unless changed:
+## The 4 tasks (decided 31 Oct)
 - Classification: `m-eurosat` (done) + `m-brick-kiln` (binary, S2; has wrong band names like eurosat, mapping known)
 - Segmentation: `m-pv4ger-seg` (binary, RGB, smallest) + `m-cashew-plant` (S2 13 bands → SSL4EO-friendly)
 
