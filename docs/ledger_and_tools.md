@@ -99,6 +99,8 @@ Mirror `runs/` and the three `.jsonl` files to S3 (`s3://<bucket>/gotrain/...`) 
 
 ## 3. Playbook lesson (`playbook.jsonl`)
 
+> **Superseded by Step 8** (see "Step 8 — Level 3 playbook" at the end). The draft below is kept for history.
+
 ```json
 {
   "lesson_id": "L-012",
@@ -263,3 +265,84 @@ Names, fields and signatures are pinned in `docs/INTERFACES.md`. In short:
 - **Read only by report and model-card code.** No agent tool, prompt or tool output mentions it
   (`tests/test_baselines.py` checks the tool modules, `agent.py`, `runs.py`, `run.py`, `hooks.py`, the prompts and
   every tool spec).
+
+## Step 8 (31 Oct) — Level 3 playbook
+
+Code: `gotrain/playbook.py` (plain Python), tools in `gotrain/tools/memory.py`, prompt `gotrain/prompts/reflect.md`.
+Rules: CREATIVE_PLAN.md §4.5; harness entry points: INTERFACES.md §9 (`opening`, `record_tests`, `snapshot`).
+Gate: `tests/test_step8.py` (synthetic ledgers, `noise.compare` mocked until Step 7).
+
+### Lesson record (`playbook.jsonl`, append-only, last line per `lesson_id` wins)
+
+```json
+{
+  "lesson_id": "L001",
+  "statement": "…", "intended_scope": "…",               // the LLM's text; everything else is code
+  "group": "optimizer",                                   // knob group of the evidence pair
+  "keys": ["lr"],                                         // keys the pair changed explicitly
+  "baseline": {"optimizer": "adamw", "lr": 0.001, …},     // knobs.group_values(parent / earlier run, group)
+  "intervention": {"optimizer": "adamw", "lr": 0.0003, …},// knobs.group_values(child / later run, group)
+  "from": {"lr": 0.001}, "to": {"lr": 0.0003},            // the changed keys only; null = derived from the weights
+  "preferred": {"lr": 0.0003},                            // what applying it sets: "to" if sign +1, "from" if -1
+  "sign": 1,                                              // -1 = "this change hurts" (applied by keeping "from")
+  "effect": {"delta", "sd_boot", "sigma_seed", "sigma", "z"},  // noise.compare(baseline run, intervention run)
+  "metric": "accuracy",
+  "evidence": {"task", "session_id", "effect_id", "runs": [a, b], "R"},
+  "context": "imagenet",                                  // null iff the change touches backbone or weights
+  "birth_scope": {"task_type", "sensor_family", "band_family", "gsd_bucket"},
+  "evidence_scope": {"task_type": ["classification"], …},  // union over confirming datasets (lists)
+  "born_on": "<task>", "born_session": "<session_id>", "born_at": "…", "born_status": "hypothesis|lead",
+  "status": "lead|hypothesis|confirmed|contradicted", "confidence": 0.6667,
+  "tests": [{"dataset", "session_id", "scope", "outcome": "confirm|refute|inconclusive|out_of_context",
+             "delta", "sigma", "z", "pairs": [{"runs", "with", "delta", "sigma", "z", "family", "outcome"}],
+             "applied", "retest", "time"}],
+  "applied_in": ["<session_id>"], "times_applied": 1,
+  "confirmations": ["<task>"], "refutations": [], "exceptions": [],
+  "profile_features": {"n_train", "n_classes", "img_side", "imbalance"}   // for ranking (similarity)
+}
+```
+
+Derived values: `norm` / `img_size` equal to the model-zoo default and `band_fill` unset or `norm_mean` are stored
+as null (re-derived where the lesson is applied). A weights lesson that did not touch the backbone is tried first
+as is, then with the evidence pair's backbone (e.g. when the target's default encoder has no such weights).
+
+### Rules in code
+- **Evidence (mine_effects):** pairs of this session's runs that are `launched_by: agent`, `stage: train`,
+  `status: done`, have the same `run_cap_min`, and differ in exactly one knob group (`knobs.diff_groups`).
+  Baseline = parent (or the earlier run). `effect_id` = `"<baseline run>><intervention run>"`. Ranked by |z|.
+- **add_lesson:** |z| ≥ 2 → `hypothesis`, 1 ≤ |z| < 2 → `lead`, below → refused. At most 5 lessons born per
+  dataset. Refused when the pair already counted as a test of an existing lesson in this session, or on a
+  read-only playbook.
+- **Buckets (retrieve):** `apply` (status hypothesis/confirmed, all four scope features covered, no `unknown`,
+  context null or = W), `other_context` (context ≠ W), `to_test` (in-scope lead, other task type with the same
+  sensor/band/GSD, or an unknown feature), `avoid` (contradicted, in scope), `hidden` (sensor, band or GSD outside
+  the evidence scope). Ranked by confidence × profile similarity, then id.
+- **Compose (opening):** pass 1 applies apply-bucket lessons with an empty context (W = family of the result, or
+  of the defaults); pass 2 applies those with context = W. A lesson touching a key already set, or making the
+  config invalid (`runs.validate_config`), is listed in `not_applicable` with a reason in `notes`. A⁻ removes the
+  applied lesson with the largest |effect| × (1 − confidence), plus same-group lessons whose context no longer
+  matches; A⁺ (nothing applied, after the agent's draft) adds the top `to_test` lesson. Both must stay valid and one
+  knob group away from A. Every opening is logged to `WORKSPACE/openings.jsonl`.
+- **Tests (record_tests, before reflect):** a qualifying pair tests a lesson (not hidden here) when it is one group
+  apart in the lesson's group, one side has all the lesson's preferred values and the other none of them (extra
+  differing keys only `norm`/`img_size`/`band_fill`, and only for a backbone/weights lesson). z is signed in the
+  lesson's direction: ≥ 2 confirms, ≤ −2 refutes, else inconclusive (recorded, not counted). A pair whose weights
+  family ≠ a non-empty context is `out_of_context` (recorded, not counted). One outcome per dataset. Idempotent per
+  session; entries are also appended to `WORKSPACE/lesson_tests.jsonl` (so a read-only snapshot keeps its tests).
+  `times_applied` counts sessions whose first agent decision run had A's recipe.
+- **Status:** birth = one confirmation for a hypothesis, none for a lead; refutations ≥ confirmations →
+  `contradicted`; otherwise refuting datasets become `exceptions` and `evidence_scope` = union of the confirming
+  datasets' features; `confirmed` = ≥ 2 confirming datasets and no refutation inside that scope; confidence =
+  (1 + C) / (2 + C + R).
+
+### Tools (`gotrain/tools/memory.py`)
+| Tool | Phases | Returns |
+|---|---|---|
+| `read_playbook(lesson_id="", page=1)` | level1, reflect | header (scope, W, bucket counts incl. hidden) + one line per lesson (≤ 200 chars), 10 per page; full JSON by id |
+| `compose_config(draft=None)` | level1 | A and its re-test partner (A⁻ / A⁺), not-applicable lessons, W |
+| `mine_effects(effect_id="", page=1)` | reflect | one line per effect: change, delta, sigma, z, context, lessons it already tested |
+| `add_lesson(effect_id, statement, intended_scope)` | reflect | the new lesson (numbers by code) |
+| `request_knob(name, rationale)` | level1, reflect | appends `{session_id, task, name, rationale, time}` to `WORKSPACE/knob_requests.jsonl` (allowed in every arm) |
+
+`level1.md` now tells the agent to pass its own draft to `compose_config(draft=...)` when nothing applies, so an A⁺
+can be built.
