@@ -20,7 +20,8 @@ def composite(x: np.ndarray, channel_names: list[str], bands: list[str],
 
 
 def ndvi(x: np.ndarray, channel_names: list[str], roles: dict) -> np.ndarray:
-    nir, red = x[channel_names.index(roles["nir"])], x[channel_names.index(roles["red"])]
+    nir = x[channel_names.index(roles["nir"])].astype(np.float32)  # caches are integer (uint16): no wrap-around
+    red = x[channel_names.index(roles["red"])].astype(np.float32)
     return (nir - red) / np.maximum(nir + red, 1e-6)
 
 

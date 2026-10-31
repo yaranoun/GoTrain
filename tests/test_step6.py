@@ -27,7 +27,7 @@ FIVE = ["m-eurosat", "m-brick-kiln", "m-pv4ger-seg", "m-cashew-plant", "m-SA-cro
 
 
 def _session(task="m-eurosat", B=10.0, sid=None):
-    return sess.start(task, "dev", ("level1",), B, gotrain.WORKSPACE / "playbook.jsonl", False, "test-model",
+    return sess.start(task, "dev", ("level1",), B, gotrain.WORKSPACE / "playbook.jsonl", gotrain.WORKSPACE / "playbook.jsonl", "test-model",
                       scope(task), session_id=sid)
 
 
@@ -199,7 +199,7 @@ def test_pots_and_screen_rules(monkeypatch):
         ledger.append(ledger.LEDGER, {**_row("m-brick-kiln", f"m-brick-kiln-95{i:02d}", s.session_id),
                                       "charged_min": 1.0})
     b = runs.budget(s)
-    assert b["P1"]["left"] == 0.5 and b["incumbent"] is not None
+    assert b["P1"]["left"] == 0.5  # (incumbent needs val_stats: covered in test_step7)
     monkeypatch.setattr(runs, "_train_cmd", _sleep_cmd(1))
     with pytest.raises(PermissionError, match="Level 1 pot"):
         runs.launch(s, {}, "no room left")

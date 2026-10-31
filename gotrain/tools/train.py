@@ -13,13 +13,21 @@ from gotrain.tools._result import EXPECTED, error, ok
 
 def check_text(c: dict) -> str:
     run_id, p = c["run_id"], c["primary"]
-    lines = [f"{run_id}: {c['status'].upper()}, epoch {c['epoch']}/{c['epochs']}, {c['minutes']:.1f} min"
-             + (f", ETA {c['eta_min']} min" if c.get("eta_min") is not None else ""),
+    lines = [f"{run_id}: {c['status'].upper()}, epoch {c['epoch']}, {c['minutes']:.1f} min"
+             + (f", about {c['eta_min']} min left in its cap" if c.get("eta_min") is not None else ""),
              f"Best val {p}: {runs.fmt(p, c['best_val'])} (epoch {c['best_epoch']})"]
+    if c.get("move"):
+        lines.append(f"Move: {c['move']}" + (f", changed knob groups {c['knob_diff']}" if c.get("knob_diff") is not None
+                                             else ""))
     if c["outcome"]:
-        lines.append(f"Outcome: {c['outcome']}; delta vs parent {c['delta_vs_parent']}, vs best earlier {c['delta_vs_best']}")
-    if c.get("stopped_early"):
-        lines.append(f"Stopped early: {c['stopped_early']}")
+        o = f"Outcome: {c['outcome']}"
+        if c.get("z_vs_incumbent") is not None:
+            o += f" (z {c['z_vs_incumbent']:+.2f} against incumbent {c['incumbent_before']}; kept needs z >= 2)"
+        if c.get("delta_vs_parent") is not None:
+            o += f"; delta vs parent {c['delta_vs_parent']:+.4f}"
+        lines.append(o)
+    if c.get("failure_reason"):
+        lines.append(f"Failure: {c['failure_reason']}")
     if c["last_epochs"]:
         lines.append("Last epochs: " + "; ".join(f"ep {e['epoch']} loss {e['train_loss']} val {e['val']}"
                                                   for e in c["last_epochs"]))
@@ -27,6 +35,9 @@ def check_text(c: dict) -> str:
         lines.append(f"Error: {c['error']}")
     if c.get("log_tail"):
         lines.append(f"Log tail:\n{c['log_tail']}")
+    if c.get("harness_running") and c["harness_running"] != run_id:
+        lines.append(f"The harness is running {c['harness_running']}, a seed repeat that measures noise. "
+                     f"wait_run('{c['harness_running']}') before your next launch.")
     return "\n".join(lines)
 
 

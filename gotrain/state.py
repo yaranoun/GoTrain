@@ -19,6 +19,10 @@ STATE_DIR = Path(os.environ.get("GOTRAIN_STATE_DIR") or Path.home() / ".gotrain-
 GPU_LOCK = STATE_DIR / "gpu.lock"
 GPU_HOLDER = STATE_DIR / "gpu.holder.json"
 TESTED = STATE_DIR / "tested.jsonl"
+LEASE = STATE_DIR / "lease.lock"
+LEASE_INFO = STATE_DIR / "lease.json"
+HOLDS_GPU_ENV = "GOTRAIN_HOLDS_GPU"  # set for a process that holds the GPU lock (training child, cache build)
+LEASE_ENV = "GOTRAIN_LEASE"         # the session lease token, inherited by the session's own processes
 
 INC001 = {"task": "m-eurosat", "event": "voided", "run_id": "m-eurosat-0005", "workspace": "workspace",
           "checkout": "~/GoTrain", "time": "2026-10-31T12:11:08Z", "vault_entry_hash": None,
@@ -48,8 +52,13 @@ def acquire_gpu(owner: str, **info) -> int:
     """Take the machine-wide GPU lock without waiting; returns the locked file descriptor.
 
     Pass it to a subprocess with Popen(pass_fds=(fd,)) and close it here: the child then holds the lock until it
-    exits. Raises Busy if the lock is held (by any process, including another descriptor in this process)."""
+    exits. Raises Busy if the lock is held (by any process, including another descriptor in this process), or if a
+    session lease is held by another session (a running agent session owns the instance between its runs too)."""
     STATE_DIR.mkdir(parents=True, exist_ok=True)
+    holder = lease_holder()
+    if holder is not None and (not holder.get("token") or os.environ.get(LEASE_ENV) != holder["token"]):
+        raise Busy(f"a session holds the instance lease ({holder.get('owner')} since {holder.get('since')}); "
+                   f"no other GPU job until it ends")
     fd = os.open(GPU_LOCK, os.O_RDWR | os.O_CREAT, 0o644)
     try:
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -89,9 +98,58 @@ def gpu_lock_holder() -> dict | None:
 def gpu_lock(owner: str, **info):
     """In-process GPU job (cache build, dry epoch): `with gpu_lock("who"):`. Raises Busy if held."""
     fd = acquire_gpu(owner, **info)
+    os.environ[HOLDS_GPU_ENV] = "1"
     try:
         yield
     finally:
+        os.environ.pop(HOLDS_GPU_ENV, None)
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
+
+
+# --------------------------------------------------------------------------- session lease
+
+def lease_holder() -> dict | None:
+    """The running session that owns the instance, or None."""
+    if not LEASE.exists():
+        return None
+    fd = os.open(LEASE, os.O_RDWR)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        try:
+            return json.loads(LEASE_INFO.read_text())
+        except (OSError, ValueError):
+            return {"owner": "unknown"}
+    else:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        return None
+    finally:
+        os.close(fd)
+
+
+@contextmanager
+def lease(owner: str, **info):
+    """Hold the instance for a whole session (run.py): other processes' GPU jobs are refused until it ends; the
+    session's own launches pass (they carry GOTRAIN_LEASE). Raises Busy if another session holds it."""
+    import uuid
+
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    fd = os.open(LEASE, os.O_RDWR | os.O_CREAT, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        os.close(fd)
+        raise Busy(f"another session holds the instance lease: {lease_holder()}") from None
+    token = uuid.uuid4().hex
+    tmp = LEASE_INFO.with_name(f"lease.{os.getpid()}.tmp")
+    tmp.write_text(json.dumps({"owner": owner, "token": token, "pid": os.getpid(), "since": _now(), **info}))
+    tmp.replace(LEASE_INFO)
+    os.environ[LEASE_ENV] = token
+    try:
+        yield token
+    finally:
+        os.environ.pop(LEASE_ENV, None)
         fcntl.flock(fd, fcntl.LOCK_UN)
         os.close(fd)
 
@@ -157,7 +215,7 @@ def main() -> None:
                   + "".join(f"\n  {l['event']} {l['time']} {l.get('run_id')}" for l in test_lines(task)))
         raise SystemExit(1 if bad else 0)
     if cmd == "holder":
-        print(json.dumps(gpu_lock_holder()))
+        print(json.dumps({"gpu": gpu_lock_holder(), "lease": lease_holder()}))
         return
     raise SystemExit(main.__doc__)
 

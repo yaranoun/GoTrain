@@ -96,6 +96,11 @@ CLASS_NAMES = {
 IGNORE_INDEX = {"m-cashew-plant": 0}
 
 
+# Bootstrap groups for the noise gate and test intervals (CREATIVE_PLAN.md §4.2): samples that are not independent.
+# m-cashew-plant has 25 dates per location; samples with an identical label mask are one location (val: 16 groups).
+GROUP_BY = {"m-cashew-plant": "label_hash"}
+
+
 def ignore_index(task: str) -> int | None:
     return IGNORE_INDEX.get(task)
 

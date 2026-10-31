@@ -29,7 +29,7 @@ from strands.experimental.hooks import BeforeToolInvocationEvent
 from strands.hooks import HookProvider, HookRegistry, MessageAddedEvent
 from strands.tools.tools import PythonAgentTool
 
-from gotrain import WORKSPACE, is_sandbox, ledger, runs
+from gotrain import WORKSPACE, is_sandbox, ledger, runs, state
 from gotrain import session as sess
 from gotrain.agent import MODEL_ID, PROMPTS, build_agent, phase_tools
 from gotrain.engine import profile as prof
@@ -247,9 +247,13 @@ def run_phase(session: sess.Session, phase: str, max_tool_calls: int, max_wall_m
             if prompt is None:
                 break
         if phase == "level1" and not session.dry_run:  # never end Level 1 with a run still training
-            for r in runs.query(session, top_k=50, sort="recent"):
-                if r["status"] == "running":
-                    runs.wait(r["run_id"], max_minutes=session.R + 5, session=session)
+            while True:
+                running = [r for r in runs.session_runs(session).values() if r["status"] == "running"]
+                if running:
+                    runs.wait(running[0]["run_id"], max_minutes=session.R + 5, session=session)
+                    continue
+                if runs.harness_step(session) is None:  # A' still owed (the agent stopped right after A)?
+                    break
     except Exception as e:  # keep the transcript complete even if the session crashes
         error = f"{type(e).__name__}: {e}"
         raise
@@ -314,7 +318,8 @@ def main() -> None:
 
     info(args.task)
     snapshot = Path(args.playbook_snapshot).resolve() if args.playbook_snapshot else None
-    playbook = snapshot or (WORKSPACE / "playbook.jsonl")
+    playbook = snapshot or (WORKSPACE / "playbook.jsonl")  # read path
+    write_path = None if (args.arm == "off" or args.dry_run) else WORKSPACE / "playbook.jsonl"
     _startup_checks(args, playbook)
     if args.session_id and any(r["type"] == "session_start" for r in sess.records(args.session_id)):
         B = sess.header(args.session_id)["B"]
@@ -325,13 +330,16 @@ def main() -> None:
     if runs.finalized(args.task) and "finalize" in args.phases and not is_sandbox():
         raise SystemExit(f"{args.task} is already finalized; nothing to do.")
 
-    session = sess.start(args.task, args.arm, tuple(args.phases), B, playbook,
-                         playbook_readonly=bool(snapshot) or args.arm == "off", model=MODEL_ID,
+    session = sess.start(args.task, args.arm, tuple(args.phases), B, playbook, write_path, model=MODEL_ID,
                          scope=scope(args.task), session_id=args.session_id, dry_run=args.dry_run)
     print(f"Session {session.session_id} · arm {session.arm} · B {session.B} (R {session.R}, P1 {session.P1}, "
           f"P2 {session.P2}) · workspace {WORKSPACE}{' (SANDBOX)' if is_sandbox() else ''}", flush=True)
 
     done, t0, totals, error = sess.completed_phases(session.session_id), time.time(), [], None
+    lease = None
+    if not session.dry_run:  # the session owns the instance: no other GPU job until it ends
+        lease = state.lease(f"{session.arm}:{session.task}", session_id=session.session_id, workspace=str(WORKSPACE))
+        lease.__enter__()
     try:
         for phase in args.phases:
             if phase in done:
@@ -341,23 +349,29 @@ def main() -> None:
                 p = prof.profile_dir(session.task) / "profile.json"
                 if p.exists() and not runs.session_runs(session):
                     prof.save_notes(session.task, "")  # profile notes are cleared at session start
-            if phase == "reflect":
+            if phase == "reflect" and not session.dry_run:
                 try:
                     from gotrain import playbook as pb
-                    pb.record_tests(session)
                 except ModuleNotFoundError:
                     print("[reflect] gotrain.playbook not built yet: no lesson tests recorded", flush=True)
+                else:
+                    tests = pb.record_tests(session)
+                    ledger.append(sess.SESSIONS, {"type": "lesson_tests", "session_id": session.session_id,
+                                                  "tests": tests, "time": _now()})
             wall = args.max_wall_min or 2 * session.P1 + 30
             end = run_phase(session, phase, args.max_tool_calls, wall, args.max_nudges)
             totals.append(end)
             if end.get("skipped") or session.dry_run:
                 continue
             if end.get("error") is None:
-                sess.phase_done(session.session_id, phase)
+                sess.phase_done(session.session_id, phase, tokens=end["tokens"], tool_calls=end["tool_calls"],
+                                wall_min=end["wall_min"])
     except Exception as e:
         error = f"{type(e).__name__}: {e}"
         raise
     finally:
+        if lease is not None:
+            lease.__exit__(None, None, None)
         tok = {k: sum(t.get("tokens", {}).get(k, 0) for t in totals) for k in ("inputTokens", "outputTokens",
                                                                              "totalTokens")}
         ledger.append(sess.SESSIONS, {"type": "session_end", "session_id": session.session_id, "time": _now(),

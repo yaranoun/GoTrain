@@ -101,4 +101,14 @@ def make_tools(session: Session) -> dict:
                          + f"\n    hypothesis: {r['hypothesis'][:200]}")
         return ok("\n".join(lines))
 
-    return [evaluate_run, record_diagnosis, compare_runs, query_ledger]
+    @tool
+    def show_tree() -> dict:
+        """This session's tree of runs: each run under its parent, with its outcome against the incumbent, plus a
+        picture of the tree. The incumbent is marked."""
+        try:
+            t = runs.tree(session)
+        except EXPECTED as e:
+            return error(str(e))
+        return ok(t["text"], [("run tree", t["png"])])
+
+    return [evaluate_run, record_diagnosis, compare_runs, query_ledger, show_tree]
