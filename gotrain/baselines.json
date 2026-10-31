@@ -1,0 +1,185 @@
+{
+ "about": "GEO-Bench reference test scores for reports and model cards only; never shown to the agent. Reference = best mean test metric over seeds per (dataset, model) on partition '1.00x train'. Every reference row uses 3-channel input. Compare with the protocol flag.",
+ "source": {
+  "repo": "https://github.com/ServiceNow/geo-bench",
+  "ref": "17cac9b7bd0d506866d8356f5817b88d173d2891",
+  "csvs": {
+   "classification": {
+    "file": "baseline_classification_results.csv",
+    "url": "https://raw.githubusercontent.com/ServiceNow/geo-bench/17cac9b7bd0d506866d8356f5817b88d173d2891/baseline_classification_results.csv",
+    "sha256": "sha256:3d8d3231dff1caca67e809006ba95a01e1b7540b443622587bb6a152e51aa9ee",
+    "rows": 5040
+   },
+   "segmentation": {
+    "file": "baseline_segmentation_results.csv",
+    "url": "https://raw.githubusercontent.com/ServiceNow/geo-bench/17cac9b7bd0d506866d8356f5817b88d173d2891/baseline_segmentation_results.csv",
+    "sha256": "sha256:32fae7b824fa5cc05e5cfcefca1474b9a7b89bfca1e00790f79b8d9c303fec89",
+    "rows": 3000
+   }
+  }
+ },
+ "our_benchmark_version": "geo-bench-1.0",
+ "tasks": {
+  "m-eurosat": {
+   "task_type": "classification",
+   "metric": "accuracy",
+   "reference": 0.98,
+   "reference_std": 0.003,
+   "n_seeds": 12,
+   "model": "ResNet18-MoCo-S2",
+   "in_chans": 3,
+   "benchmark_version": "classification_v0.8.5",
+   "partition": "1.00x train",
+   "csv": "baseline_classification_results.csv",
+   "runner_up": {
+    "model": "ResNet50-MoCo-S2",
+    "reference": 0.9779
+   },
+   "protocol": {
+    "bands_differ": true,
+    "benchmark_version_differs": true,
+    "class0_ignored_by_us": false,
+    "comparable": false,
+    "flag": "not comparable: bands differ (3-channel reference, we use 13); benchmark classification v0.8.5 vs our v1.0"
+   }
+  },
+  "m-brick-kiln": {
+   "task_type": "classification",
+   "metric": "accuracy",
+   "reference": 0.9887,
+   "reference_std": 0.0013,
+   "n_seeds": 12,
+   "model": "ConvNeXt-B-timm",
+   "in_chans": 3,
+   "benchmark_version": "classification_v0.8.5",
+   "partition": "1.00x train",
+   "csv": "baseline_classification_results.csv",
+   "runner_up": {
+    "model": "SwinV2-T-timm",
+    "reference": 0.9874
+   },
+   "protocol": {
+    "bands_differ": true,
+    "benchmark_version_differs": true,
+    "class0_ignored_by_us": false,
+    "comparable": false,
+    "flag": "not comparable: bands differ (3-channel reference, we use 10); benchmark classification v0.8.5 vs our v1.0"
+   }
+  },
+  "m-so2sat": {
+   "task_type": "classification",
+   "metric": "accuracy",
+   "reference": 0.5811,
+   "reference_std": 0.0183,
+   "n_seeds": 12,
+   "model": "ConvNeXt-B-timm",
+   "in_chans": 3,
+   "benchmark_version": "classification_v0.8.5",
+   "partition": "1.00x train",
+   "csv": "baseline_classification_results.csv",
+   "runner_up": {
+    "model": "ViT-S-timm",
+    "reference": 0.5752
+   },
+   "protocol": {
+    "bands_differ": true,
+    "benchmark_version_differs": true,
+    "class0_ignored_by_us": false,
+    "comparable": false,
+    "flag": "not comparable: bands differ (3-channel reference, we use 18); benchmark classification v0.8.5 vs our v1.0"
+   }
+  },
+  "m-pv4ger-seg": {
+   "task_type": "segmentation",
+   "metric": "miou",
+   "reference": 0.9408,
+   "reference_std": 0.001,
+   "n_seeds": 12,
+   "model": "ResNet18-U-Net-timm",
+   "in_chans": 3,
+   "benchmark_version": "segmentation_v0.4",
+   "partition": "1.00x train",
+   "csv": "baseline_segmentation_results.csv",
+   "runner_up": {
+    "model": "ResNet101-U-Net-timm",
+    "reference": 0.9408
+   },
+   "protocol": {
+    "bands_differ": false,
+    "benchmark_version_differs": true,
+    "class0_ignored_by_us": false,
+    "comparable": true,
+    "flag": "roughly comparable: benchmark segmentation v0.4 vs our v1.0"
+   }
+  },
+  "m-cashew-plant": {
+   "task_type": "segmentation",
+   "metric": "miou",
+   "reference": 0.4873,
+   "reference_std": 0.0059,
+   "n_seeds": 12,
+   "model": "ResNet50-U-Net-timm",
+   "in_chans": 3,
+   "benchmark_version": "segmentation_v0.4",
+   "partition": "1.00x train",
+   "csv": "baseline_segmentation_results.csv",
+   "runner_up": {
+    "model": "ResNet101 DeepLabV3-timm",
+    "reference": 0.4855
+   },
+   "protocol": {
+    "bands_differ": true,
+    "benchmark_version_differs": true,
+    "class0_ignored_by_us": true,
+    "comparable": false,
+    "flag": "not comparable: bands differ (3-channel reference, we use 12); benchmark segmentation v0.4 vs our v1.0; class 0 ('no data') ignored by us, counted by the reference"
+   }
+  },
+  "m-SA-crop-type": {
+   "task_type": "segmentation",
+   "metric": "miou",
+   "reference": 0.3041,
+   "reference_std": 0.0045,
+   "n_seeds": 7,
+   "model": "ResNet101 DeepLabV3-timm",
+   "in_chans": 3,
+   "benchmark_version": "segmentation_v0.4",
+   "partition": "1.00x train",
+   "csv": "baseline_segmentation_results.csv",
+   "runner_up": {
+    "model": "ResNet101-U-Net-timm",
+    "reference": 0.2991
+   },
+   "protocol": {
+    "bands_differ": true,
+    "benchmark_version_differs": true,
+    "class0_ignored_by_us": true,
+    "comparable": false,
+    "flag": "not comparable: bands differ (3-channel reference, we use 12); benchmark segmentation v0.4 vs our v1.0; class 0 ('no data') ignored by us, counted by the reference"
+   }
+  },
+  "m-nz-cattle": {
+   "task_type": "segmentation",
+   "metric": "miou",
+   "reference": 0.8107,
+   "reference_std": 0.0021,
+   "n_seeds": 12,
+   "model": "ResNet50-U-Net-timm",
+   "in_chans": 3,
+   "benchmark_version": "segmentation_v0.4",
+   "partition": "1.00x train",
+   "csv": "baseline_segmentation_results.csv",
+   "runner_up": {
+    "model": "ResNet18-U-Net-timm",
+    "reference": 0.8101
+   },
+   "protocol": {
+    "bands_differ": false,
+    "benchmark_version_differs": true,
+    "class0_ignored_by_us": false,
+    "comparable": true,
+    "flag": "roughly comparable: benchmark segmentation v0.4 vs our v1.0"
+   }
+  }
+ }
+}

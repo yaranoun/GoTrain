@@ -249,3 +249,17 @@ Names, fields and signatures are pinned in `docs/INTERFACES.md`. In short:
 - **Prompts** live in `gotrain/prompts/` (`system.md` + one section per phase). `tests/test_step6.py` includes the
   hygiene test (no task ids, class names, sensor names, band ids, GSD values or decimals in prompts or tool specs).
 - `GOTRAIN_CACHE` overrides the data cache location, for a second checkout.
+
+## Step 5 (amended, 31 Oct) — GEO-Bench references, reports only
+
+- `gotrain/baselines.json`, built by `python scripts/geobench_baselines.py` (downloads ServiceNow/geo-bench's
+  `baseline_classification_results.csv` and `baseline_segmentation_results.csv` at a pinned commit and checks their
+  sha256; `--csv-dir` uses local copies).
+- Per task (`m-eurosat`, `m-brick-kiln`, `m-so2sat`, `m-pv4ger-seg`, `m-cashew-plant`, `m-SA-crop-type`,
+  `m-nz-cattle`): `reference` = best mean test metric over seeds per (dataset, model) on partition `1.00x train`,
+  plus `reference_std`, `n_seeds`, `model`, `in_chans` (always 3), `benchmark_version` (classification v0.8.5 /
+  segmentation v0.4), `csv`, `runner_up`, and `protocol` = `{bands_differ, benchmark_version_differs,
+  class0_ignored_by_us, comparable, flag}`. `flag` is the one-line text to print next to any comparison.
+- **Read only by report and model-card code.** No agent tool, prompt or tool output mentions it
+  (`tests/test_baselines.py` checks the tool modules, `agent.py`, `runs.py`, `run.py`, `hooks.py`, the prompts and
+  every tool spec).
