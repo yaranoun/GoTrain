@@ -12,7 +12,6 @@
 #   verify <task> <arm>                        python -m gotrain.verify --session <task>__<arm>__chain (if built)
 #   snapshot                                   freeze workspace/playbook.jsonl -> experiments/playbook-ab/playbook-snapshot.jsonl
 #   commit <message>                           commit + push workspace/ logs/ experiments/ (files > 5 MB unstaged)
-#   wait_deploy                                set PAUSE: the operator merges the Level 2 deploy, then resumes
 # A failing item sets PAUSE and stops the chain (harness failure). A failed push never blocks the queue.
 set -uo pipefail
 
@@ -81,27 +80,27 @@ case "$cmd" in
     B="${2:?usage: chain.sh init <B>}"
     [ -s "$Q/queue.txt" ] && { echo "queue exists: $Q/queue.txt (remove it first)"; exit 1; }
     {
+      # Level 2 is part of the frozen code (Step 12 built before F1), so #1-#4 run all four phases in one session
+      # and are finalized as they go (the never-cut test scores land early). #5: ON Level 1 + reflect, OFF Level 1,
+      # and only then ON Level 2 + finalize (no #5 test evaluation before both arms' Level 1 is complete).
       for t in m-eurosat m-brick-kiln m-pv4ger-seg m-cashew-plant; do
         echo "build_cache $t"
-        echo "session $t main level1,reflect --budget $B"
+        echo "session $t main level1,reflect,level2,finalize --budget $B"
         echo "verify $t main"
-        echo "commit $t level1 + reflect"
+        echo "commit $t level1 + reflect + level2 + finalize"
       done
       echo "snapshot"
       echo "commit playbook snapshot after #4"
       echo "build_cache m-SA-crop-type"
       echo "session m-SA-crop-type main level1,reflect --budget $B --playbook-snapshot experiments/playbook-ab/playbook-snapshot.jsonl"
       echo "verify m-SA-crop-type main"
-      echo "commit m-SA-crop-type ON level1"
+      echo "commit m-SA-crop-type ON level1 + reflect"
       echo "session m-SA-crop-type off level1 --budget $B"
       echo "verify m-SA-crop-type off"
       echo "commit m-SA-crop-type OFF level1"
-      echo "wait_deploy"
-      for t in m-eurosat m-brick-kiln m-pv4ger-seg m-cashew-plant m-SA-crop-type; do
-        echo "session $t main level2,finalize"
-        echo "verify $t main"
-        echo "commit $t level2 + finalize"
-      done
+      echo "session m-SA-crop-type main level2,finalize"
+      echo "verify m-SA-crop-type main"
+      echo "commit m-SA-crop-type level2 + finalize"
     } > "$Q/queue.txt"
     : > "$Q/done.txt"
     echo "queue written: $Q/queue.txt ($(wc -l < "$Q/queue.txt") items, B=$B)" ;;
