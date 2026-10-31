@@ -20,7 +20,7 @@ Status as of 31 Oct, 23:00 Beirut. ✅ done · ▶ running / in progress · ⏳ 
 ## Timeline (Beirut)
 - **Chain:** #1 done 22:11; #2–#4 about one per hour; #5 (ON, OFF, finalize) ~01:00–03:30.
 - **After the chain:** verify, registry and cards, report, README, merge + tag (03:30–04:30).
-- **Pitch:** re-render with real numbers; the GPU window for MCP tests (04:30–06:00).
+- **Pitch:** deck numbers filled and the final numbers sent to Aya for her video; the GPU window for MCP tests (04:30–06:00).
 - **Buffer** to the 11:00 deadline.
 
 ## Needs you
