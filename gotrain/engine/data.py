@@ -24,7 +24,7 @@ import torch
 
 from gotrain import CACHE
 from gotrain.engine.download import dataset_dir
-from gotrain.engine.tasks import CHANNELS, CLASS_NAMES, GROUP_BY, info
+from gotrain.engine.tasks import CHANNELS, CLASS_NAMES, GROUP_BY, VALUE_SCALE, info
 
 ALLOWED_SPLITS = {"train", "val"}
 
@@ -60,7 +60,17 @@ def group_keys(task: str, ids: np.ndarray, y: np.ndarray) -> np.ndarray:
         return np.asarray(ids).astype(str)
     if rule == "label_hash":
         return np.array(["loc-" + hashlib.sha1(np.ascontiguousarray(m).tobytes()).hexdigest()[:12] for m in y])
+    if rule == "nz_location":  # "<prefix>_<location>[_shifted]": a shifted twin is the same location
+        import re
+
+        return np.array([re.sub(r"_shifted$", "", str(i).split("_", 1)[-1]) for i in ids])
     raise ValueError(f"unknown GROUP_BY rule {rule!r} for {task}")
+
+
+def scale_values(task: str, x: np.ndarray) -> np.ndarray:
+    """tasks.VALUE_SCALE applied (and rounded) at load-into-cache time; identity for other tasks."""
+    s = VALUE_SCALE.get(task)
+    return x if s is None else np.round(np.asarray(x, np.float32) * s).astype(np.float32)
 
 
 def to_float(x) -> np.ndarray:
@@ -96,8 +106,11 @@ def v2_exists(task: str, split: str) -> bool:
 def _layout(task: str) -> dict:
     """What a cache bakes in at build time; checked on every load."""
     ch = CHANNELS.get(task)
-    return {"channels": None if ch is None else {"permutation": list(ch["permutation"]), "names": list(ch["names"])},
-            "group_by": GROUP_BY.get(task)}
+    out = {"channels": None if ch is None else {"permutation": list(ch["permutation"]), "names": list(ch["names"])},
+           "group_by": GROUP_BY.get(task)}
+    if VALUE_SCALE.get(task) is not None:
+        out["value_scale"] = VALUE_SCALE[task]
+    return out
 
 
 def _may_build() -> bool:
@@ -180,7 +193,10 @@ def build_cache(task: str, split: str) -> Path:
         perm = CHANNELS.get(task, {}).get("permutation")
         if perm is not None:
             mean, std = np.asarray(mean)[perm], np.asarray(std)[perm]
-        pick = (lambda a: a) if perm is None else (lambda a: a[:, perm] if a.ndim == 4 else a[perm])
+        sv = VALUE_SCALE.get(task) or 1.0
+        mean, std = np.asarray(mean, np.float32) * sv, np.asarray(std, np.float32) * sv
+        sel = (lambda a: a) if perm is None else (lambda a: a[:, perm] if a.ndim == 4 else a[perm])
+        pick = lambda a: scale_values(task, sel(a))
         shape = (len(perm) if perm is not None else x_all.shape[1], *x_all.shape[2:])
         dtype = _choose_dtype(pick(x_all[i:i + 64]) for i in range(0, len(x_all), 64))
         return _write_v2(task, split, lambda i: np.asarray(pick(x_all[i]), np.float32), len(x_all), shape, y,
@@ -199,11 +215,12 @@ def build_cache(task: str, split: str) -> Path:
         x, _ = s.pack_to_3d(band_names=ds.band_names)
         x = np.asarray(x, dtype=np.float32).transpose(2, 0, 1)
         y[i] = np.asarray(s.label.data).squeeze() if task_type == "segmentation" else np.asarray(s.label)
-        return x[perm] if perm is not None else x
+        return scale_values(task, x[perm] if perm is not None else x)
 
     means, stds = ds.normalization_stats()
-    mean = np.asarray(means, np.float32)[perm] if perm is not None else np.asarray(means, np.float32)
-    std = np.asarray(stds, np.float32)[perm] if perm is not None else np.asarray(stds, np.float32)
+    sv = VALUE_SCALE.get(task) or 1.0
+    mean = (np.asarray(means, np.float32)[perm] if perm is not None else np.asarray(means, np.float32)) * sv
+    std = (np.asarray(stds, np.float32)[perm] if perm is not None else np.asarray(stds, np.float32)) * sv
     classes = specs.label_type.class_names if hasattr(specs.label_type, "class_names") else None
     classes = classes if classes else [str(c) for c in range(n_classes)]
     dtype = _choose_dtype(get(i) for i in range(min(64, len(ds))))
@@ -277,7 +294,8 @@ def _load_arrays(task: str, split: str) -> dict:
         _build_v1(task, split)
     d = dict(np.load(path, allow_pickle=False))
     x, mean, std = _select(task, d["x"], d["mean"], d["std"])
-    d["x"], d["mean"], d["std"] = x, mean, std
+    sv = VALUE_SCALE.get(task) or 1.0
+    d["x"], d["mean"], d["std"] = scale_values(task, x), mean * sv, std * sv
     if "ids" not in d:
         d["ids"] = np.asarray(split_names(_dataset(task, split))).astype(str)
     d["groups"] = group_keys(task, d["ids"], d["y"])

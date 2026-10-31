@@ -90,7 +90,13 @@ def band_roles(task: str) -> dict:
 # Tasks not listed fall back to a per-image percentile stretch. 8-bit aerial RGB: 255.
 # m-SA-crop-type is 8-bit (see SA_CROP_DISK_ORDER): 76.5 is the same 0.3 reflectance as 3000 elsewhere.
 DISPLAY_SCALE = {"m-eurosat": 3000.0, "m-brick-kiln": 3000.0, "m-cashew-plant": 3000.0, "m-pv4ger-seg": 255.0,
-                 "m-SA-crop-type": 76.5, "m-nz-cattle": 255.0}
+                 "m-SA-crop-type": 3000.0, "m-nz-cattle": 255.0}
+
+# Raw values multiplied (and rounded) when a split is loaded into the cache, so every Sentinel-2 task is in
+# reflectance x 1e4 (what div10000 / SSL4EO weights expect). m-SA-crop-type is stored 8-bit (about reflectance x 255,
+# see SA_CROP_DISK_ORDER): x 10000/255. Decided 31 Oct (build agent, on the second session's Step 9 finding); disclosed.
+# Lossless: 256 distinct values map to 256 distinct integers.
+VALUE_SCALE = {"m-SA-crop-type": 10000 / 255}
 
 
 def display_scale(task: str) -> float | None:
@@ -124,9 +130,10 @@ IGNORE_INDEX = {"m-cashew-plant": 0, "m-SA-crop-type": 0}
 # m-cashew-plant has 25 dates per location; samples with an identical label mask are one location (val: 16 groups).
 # m-SA-crop-type has 5 dates per field tile (names ..._<tile>_<k>, identical label masks, checked on train): one
 # location per label mask (val: 250 groups of 1000 images).
-# m-nz-cattle has no rule yet: about half its images have a "_shifted" twin of the same coordinates (train 204 pairs,
-# val 6 pairs, and 50 val locations also appear in train); grouping them needs a name-based rule in data.group_keys.
-GROUP_BY = {"m-cashew-plant": "label_hash", "m-SA-crop-type": "label_hash"}
+# m-nz-cattle: about half its images have a "_shifted" twin of the same coordinates (train 204 pairs, val 6 pairs);
+# nz_location groups a twin with its original by name (data.group_keys). 50 val locations also appear in train
+# (GEO-Bench's own split): disclosed, not changed.
+GROUP_BY = {"m-cashew-plant": "label_hash", "m-SA-crop-type": "label_hash", "m-nz-cattle": "nz_location"}
 
 
 def ignore_index(task: str) -> int | None:
