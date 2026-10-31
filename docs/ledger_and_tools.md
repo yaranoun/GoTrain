@@ -396,3 +396,17 @@ arm off and dry runs, where lesson writes refuse). The snapshot is never written
 - **Tool calls:** they are serialised by polling a lock, so the Strands thread pool is never exhausted (a test drives
   more parallel calls than the pool has threads). Each agent ledger row records the `tool_use_id` of its
   `launch_training` call.
+
+## With/without-playbook analysis (31 Oct) — `experiments/playbook-ab/`
+
+- `PROTOCOL.md`: the pre-registered protocol (arms, rungs and OFF workspaces, run order, the rule "no test
+  evaluation of the held-out dataset until both arms' Level 1 is complete", metric definitions from INTERFACES v2
+  §10). `B`, `R` and the `analyze.py` sha256 are `TBD at F1`; `analyze.py` refuses to run until they are set.
+- `analyze.py --on <sid>@<workspace> --off <sid>@<workspace> [--protocol P] [--out D]` writes `metrics.json`
+  (per arm: anytime curve steps, AUC, V at P1/3, 2P1/3, P1, first-run val, minutes to within 2σ_AB, wasted runs,
+  tokens; ON: lesson counts; σ_AB and its parts; checks) and `curves.png`. Exits 1 if a check fails (same task,
+  code tree, prompt hash, model; B and R equal the protocol's; ON arm main; OFF arm off with no write path and an
+  empty playbook; its own hash equal to the protocol's). Scores come from each run's `val_stats.npz` via the pure
+  `gotrain.noise` functions.
+- Tested on `tests/fixtures/two_ledgers/` (`tests/test_analyze.py`); the fixture's `val_stats.npz` files are
+  tracked (`.gitignore` exception).

@@ -43,7 +43,7 @@ reason are logged in `logs/chain.log` and reported.
 **Identical in both arms:** code identity (tree hash of `gotrain/`), prompt hash, model, B, R, seed policy, data
 cache, profile, instance. Nothing else runs on the instance during either arm. `analyze.py` checks the session
 headers for: same task, B and R equal to this file, same code tree, prompt hash and model, ON arm `main`, OFF arm
-`off` with an empty read-only playbook. Any failed check makes it exit non-zero.
+`off` with no playbook write path and an empty playbook, and its own hash equal to the one recorded above. Any failed check makes it exit non-zero.
 
 ## Run order
 
@@ -57,27 +57,37 @@ headers for: same task, B and R equal to this file, same code tree, prompt hash 
 **Key rule: no test evaluation of the held-out dataset until both arms' Level 1 is complete.** The OFF arm is never
 finalized (its workspace is a sandbox).
 
-## Metrics (val only, over each arm's Level 1 pot P1)
+## Metrics (val only, over each arm's Level 1 pot P1; definitions from INTERFACES.md v2 §10)
 
 Computed by `python experiments/playbook-ab/analyze.py --on <session_id>@workspace --off <session_id>@<OFF workspace>`
-into `experiments/playbook-ab/<task>/metrics.json` and `curves.png`.
+into `experiments/playbook-ab/<task>/metrics.json` and `curves.png`. A run's val score is
+`noise.score(noise.load_val_stats(<workspace>/<val_stats>))`, read with the pure functions on each arm's own files.
 
-- **GPU-minute axis:** Level 1 runs (screen, train, seed_repeat) in launch order, each charged its launch-to-exit
-  minutes whatever its status. A run's score counts from the minute it exits.
-- **Best-so-far:** the best val of finished decision runs (stage `train`). Screens and the harness seed repeat cost
-  minutes but never count as a score; failed and killed runs cost minutes and add no score.
-- **Primary: anytime performance** = (1 / P1) × ∫₀^P1 best-so-far, with best-so-far taken as 0 before the first
-  finished decision run.
-- **Secondary:**
-  - first-run val (the first decision run launched; null if it did not finish);
-  - best-so-far at P1/3, 2·P1/3 and P1;
-  - GPU minutes to come within 2σ of the better arm's final best, with σ = the larger arm's seed σ,
-    |val(A′) − val(A)| / √2;
-  - wasted runs: failed + killed, and finished decision runs whose outcome is `regressed`;
-  - Bedrock tokens of the level1 phase (input, output, total);
-  - ON only: lessons retrieved (not hidden), applied, and this session's lesson tests confirmed / refuted /
-    inconclusive / out of context.
-- The curve plot shows both arms' best-so-far with a ±2σ band.
+**Anytime curve (per arm):**
+- Rows: the session's rows with stage screen, train or seed_repeat, ordered by `created_at` (runs are serial).
+- x_k = the sum of `charged_min` of rows 1..k (launch to exit, whatever the status).
+- V(x) steps up to max(V, s_k) at x_k, only for done agent `train` rows, where s_k is the run's val score. Other
+  rows only advance x (screens, the harness seed repeat, failed and killed runs).
+- Before the first such row, V = the majority-class score on val, computed from the session's first val_stats.
+- V is held to P1. **Primary metric: AUC = (1 / P1) ∫₀^P1 V dt.** V(P1/3), V(2·P1/3) and V(P1) come from the same
+  step function.
+
+**Secondary metrics:**
+- **First-run val:** the score of the opening's A (record `opening`: `A_run_id`, else `draft_run_id`), else of
+  the first agent decision run.
+- **σ_AB** = sqrt(sigma_seed_ON² + paired_bootstrap(best_OFF, best_ON).sd²), where best = the run that set the
+  arm's V(P1). If ON's sigma_seed is null, OFF's is used; if both are null, the bootstrap alone. sigma_seed is read
+  from each workspace's `sigma_seed` record.
+- **Minutes to within 2σ:** V* = the larger of the two arms' V(P1). For each arm, the smallest x_k with
+  V(x_k) ≥ V* − 2·σ_AB, or null.
+- **Wasted runs:** agent rows with stage screen or train that ended failed or killed, or whose outcome is
+  `within_noise` or `regressed`, or whose (stage, recipe_hash) repeats an earlier agent row. Seed repeats are not
+  counted.
+- **Tokens:** the `level1` `phase_done` record of each arm (input, output, total).
+- **ON only, lessons:** retrieved (buckets other than hidden) and applied, from the last `opening` record; lessons
+  tested, confirmed, refuted and inconclusive, from the last `lesson_tests` record (one result per lesson: confirm
+  if any pair confirms and none refutes, refute in the mirror case, else inconclusive).
+- The plot shows both arms' V with a ±2·σ_AB band.
 
 ## Honest reporting (CREATIVE_PLAN.md §5.4)
 

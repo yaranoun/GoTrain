@@ -14,6 +14,7 @@ workspace/cache/
 !workspace/runs/**/val_stats.npz
 !experiments/**/val_stats.npz
 !workspace/runs/**/test_stats.npz
+!tests/fixtures/**/val_stats.npz
 *.hdf5
 *.pt
 *.ckpt
