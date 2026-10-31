@@ -142,7 +142,8 @@ def kickoff_prompt(session: sess.Session, phase: str) -> str:
     if rows:
         lines.append("This session's runs so far (newest first):")
         for r in rows:
-            lines.append(f"- {r['run_id']} [{r['stage']}, {r['status']}] {r['model']} lr {r['lr']}: "
+            lines.append(f"- {r['run_id']} [{r['stage']}, {r['status']}] {r['model']}"
+                         + (f" lr {r['lr']}" if r["lr"] is not None else "") + ": "
                          f"val {runs.fmt(r['primary'], r['val'])}, {r['outcome']}; hypothesis: {r['hypothesis'][:150]}")
     if phase == "level1":
         lines.append("Start Level 1 now." if not rows else "Resume Level 1.")
