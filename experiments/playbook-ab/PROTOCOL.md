@@ -47,12 +47,15 @@ headers for: same task, B and R equal to this file, same code tree, prompt hash 
 
 ## Run order
 
-1. ON Level 1 (+ reflect)
-2. OFF Level 1
-3. Planning replays (five per arm, each in its own `.sandbox/` workspace, `--dry-run`, tokens only; ON replays read
-   the snapshot, OFF replays an empty playbook) and the Level 2 rehearsal (no training)
-4. Level 2 deploy
-5. Level 2 + finalize for #1–#5
+Level 2 (Step 12) was built before the freeze, so it is part of the frozen code that both arms run; there is no
+Level 2 deploy. `scripts/chain.sh` queue:
+1. #1–#4: one main session each, `level1,reflect,level2,finalize` (each dataset is finalized when its session ends)
+2. Playbook snapshot after #4's reflect
+3. #5 ON: `level1,reflect` with the snapshot
+4. #5 OFF: `level1`
+5. #5 ON: `level2,finalize` (same session id)
+6. If time allows: planning replays (five per arm, each in its own `.sandbox/` workspace, `--dry-run`, tokens only;
+   ON replays read the snapshot, OFF replays an empty playbook). First on the cut list.
 
 **Key rule: no test evaluation of the held-out dataset until both arms' Level 1 is complete.** The OFF arm is never
 finalized (its workspace is a sandbox).
