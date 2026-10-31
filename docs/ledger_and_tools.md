@@ -455,12 +455,55 @@ JSON report go to `.sandbox/step9/`). Gate tests without data: `tests/test_step9
 - **m-SA-crop-type:** stored order B01–B12 without B10, then CLM; names verified by the resolution fingerprint
   (60 m bands in 6×6 blocks, 20 m in 2×2, B02/B03/B04/B08 native 10 m) and the correlation fingerprint, and by the
   GEO-Bench converter. `CHANNELS` keeps the 12 S2 bands (SSL4EO fills B10). **Values are 8-bit (0–255, ≈
-  reflectance × 255)**, not reflectance × 10⁴ as on the other S2 tasks, so `DISPLAY_SCALE` is 76.5, and
-  `norm: div10000` gives SSL4EO inputs about 39× too small. Cloud layer: 0 on every pixel (dropped). 10 classes
-  (converter names); class 0 "No Data" → `IGNORE_INDEX = 0`. Five dates per field tile with identical label
-  masks → `GROUP_BY = label_hash` (val: 250 groups). True colour looks natural.
+  reflectance × 255)**, not reflectance × 10⁴ as on the other S2 tasks. Decision (build agent, option A):
+  `tasks.VALUE_SCALE = 10000/255` rescales them (rounded, lossless) when train/val enter cache v2 and when
+  `final_test` loads test, so `norm: div10000` / SSL4EO see reflectance × 10⁴ and `DISPLAY_SCALE` is 3000. Cloud
+  layer: 0 on every pixel (dropped). 10 classes (converter names); class 0 "No Data" → `IGNORE_INDEX = 0`. Five dates
+  per field tile with identical label masks → `GROUP_BY = label_hash` (val: 250 groups). True colour looks natural.
 - **m-nz-cattle:** 8-bit aerial RGB (R, G, B), 500×500, classes `no cattle` / `cattle` (masks are radius-6 px
   boxes around points). About half the images have a `_shifted` twin at the same coordinates (train 204 pairs, val 6;
-  50 val locations also occur in train: disclosed). No `GROUP_BY` yet: it needs a name-based rule in `data.py`.
+  50 val locations also occur in train: disclosed). `GROUP_BY = nz_location` (name without `_shifted`).
 - Scopes: SA-crop (segmentation, s2-multispectral, multispectral, (1,10]m); nz-cattle (segmentation, aerial-rgb,
   rgb, ≤1m). No ledger row for either task exists in any checkout.
+- **Dry epochs** (`scripts/step9_dry_epoch.py`, 31 Oct 20:56, Tesla T4, shared cache read-only, under
+  `gpu_lock("s2-step9")`, no labels read, no weights kept; refused while a lease is held):
+
+  | Task, config | Steps | Time | Peak RSS | Peak GPU |
+  |---|---|---|---|---|
+  | SA-crop, resnet34/imagenet U-Net (default), bs 16 | 187 (full epoch) | 57.0 s (0.305 s/step) | 4.41 GB | 1.37 GB |
+  | SA-crop, resnet18/ssl4eo_moco (13 bands), bs 16 | 40 | 0.198 s/step (≈ 37 s/epoch) | 2.61 GB | 1.11 GB |
+  | nz-cattle, resnet34/imagenet U-Net (default), bs 16 | 32 (full epoch) | 16.9 s (0.528 s/step) | 1.82 GB | 3.98 GB |
+
+  Gate: peak RAM < 12 GB ✓.
+
+## Step 13 (31 Oct, reduced form first) — store, model registry, model cards, MCP server, GoPilot client
+
+- **Store** (`gotrain/store.py`): `LocalStore` (folder, `$GOTRAIN_STORE_ROOT`, default `~/.gotrain-store`) and
+  `S3Store` behind one interface; `GOTRAIN_STORE=local | s3://<bucket>[/<prefix>]`. Keys: `datasets/<benchmark>/<task>.zip`,
+  `models/<task>/<run_id>/{checkpoint.pt|composite.json, config.json, val_stats.npz, test_stats.npz, model_card.md}`,
+  `registry/registry.jsonl`, `playbook/playbook.jsonl`. Every put/get is logged with its sha256 to
+  `WORKSPACE/store_log.jsonl`; `fetch-dataset` checks the zip against the last push. CLI: `python -m gotrain.store
+  doctor | push-dataset <task> | fetch-dataset <task> | push-models [<task>] | ls [<prefix>]`.
+  `doctor` = identity + put/get/delete round trip. On 31 Oct the role `gotrain-hackathon-role` can list
+  `s3://gotrain-575331248402-eu-central-1` but has **no `s3:PutObject`** (AccessDenied), so the S3 backend waits
+  for an IAM grant (Put/Get/DeleteObject on that bucket); `LocalStore` works.
+- **Model registry** (`gotrain/registry.py`, `WORKSPACE/registry.jsonl`, append-only, last line per `model_id` wins):
+  `model_id` = `<task>:v<N>`, `run_id`, `kind` (checkpoint | composite), `checkpoint_sha256`, `members` (composites:
+  run ids, member checkpoint hashes, TTA flags), `derived_from`, `config`, `val` (from val_stats.npz), `test`
+  (**from the vault entry only**: score, TTA, `vault_entry_hash`, `test_stats_sha256`), `tag` (candidate |
+  production | archived; promoting archives the previous production model). For a finalized model the checkpoint
+  (or composite.json) and member hashes must equal the vault entry's, or registration is refused. `python -m
+  gotrain.registry sync` registers every vault entry as its task's production model.
+- **Model cards** (`gotrain/model_card.py`, `WORKSPACE/model_cards/<task>__v<N>.md` and `<task>.md` for production):
+  written entirely by code: task (scope, bands, classes, ignore class, data notes), model (config or members,
+  hashes, lineage), scores (val; test from the vault with a 95% grouped bootstrap interval, 10,000 resamples, seed 0,
+  computed from test_stats.npz only after its sha256 and its score match the vault entry; GEO-Bench reference with
+  its protocol flag), how it was found (session header, GPU minutes, opening, lesson tests, lessons born), and
+  disclosed incidents (INC-001 on m-eurosat).
+- **MCP server** (`python -m gotrain.mcp_server`, FastMCP over stdio, `mcp>=1.23,<2`): read-only tools
+  `list_tasks`, `list_models`, `get_model_card`, `get_playbook`, `query_runs`. It never calls finalize, launch,
+  add_lesson or any write.
+- **GoPilot client** (`examples/gopilot_client.py`): Strands `MCPClient` over stdio; lists the tools and fetches a
+  model card, or `--ask "<question>"` runs a Strands agent (Bedrock) with the tools.
+- Tests: `tests/test_step13.py` (synthetic finalized models and a Level 2 ensemble; the vault rows it adds are
+  removed again at teardown).

@@ -28,7 +28,9 @@ def test_entries_are_consistent():
         assert set(roles.values()) <= set(tasks.CHANNELS[t]["names"]) and tasks.display_scale(t)
     assert len(tasks.CLASS_NAMES["m-SA-crop-type"]) == 10 and tasks.ignore_index("m-SA-crop-type") == 0
     assert tasks.CLASS_NAMES["m-nz-cattle"] == ["no cattle", "cattle"] and tasks.ignore_index("m-nz-cattle") is None
-    assert tasks.GROUP_BY["m-SA-crop-type"] == "label_hash"
+    assert tasks.GROUP_BY["m-SA-crop-type"] == "label_hash" and tasks.GROUP_BY["m-nz-cattle"] == "nz_location"
+    # SA-crop is stored 8-bit: the cache rescales it to reflectance x 1e4 like the other Sentinel-2 tasks
+    assert tasks.VALUE_SCALE["m-SA-crop-type"] == 10000 / 255 and tasks.display_scale("m-SA-crop-type") == 3000.0
     # 13-band SSL4EO weights fit SA-crop by filling B10 only
     assert band_plan("segmentation", "resnet18", "ssl4eo_moco", sa["names"])["missing"] == ["B10"]
 

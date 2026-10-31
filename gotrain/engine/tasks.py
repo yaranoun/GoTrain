@@ -38,7 +38,8 @@ CASHEW_DISK_ORDER = ["B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B8
 # B05/B06/B07/B8A/B11/B12 2x2 blocks (20 m), B02/B03/B04/B08 native 10 m texture; correlations match S2 (B07~B8A 0.99,
 # B06~B07 0.98, B11~B12 0.97, B02~B03 0.96); the converter (crop_type_south_africa.py) lists the same order.
 # VALUES ARE 8-BIT: 0-255 (int16 on disk, saturating at 255), about reflectance x 255, not reflectance x 1e4 like
-# the other Sentinel-2 tasks (GEO-Bench's band_stats agree; true colour is natural at 76.5 = 0.3 reflectance).
+# the other Sentinel-2 tasks (GEO-Bench's band_stats agree; raw true colour is natural at 76.5 = 0.3 reflectance).
+# The cache rescales it to reflectance x 1e4 (VALUE_SCALE below).
 # Cloud layer checked by hand: 0 on every pixel (the converter keeps each field tile's 5 least-cloudy dates), so it is
 # dropped; a few images still show clouds. About 0.4-4% of pixels are 0 in every band (rotated-tile borders).
 SA_CROP_DISK_ORDER = ["B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B8A", "B09", "B11", "B12", "CLM"]
@@ -88,7 +89,7 @@ def band_roles(task: str) -> dict:
 # A fixed scale keeps the true R:G:B ratios; the per-image percentile stretch subtracts an
 # offset that turns dark scenes (forest, water) blue from atmospheric haze in B02.
 # Tasks not listed fall back to a per-image percentile stretch. 8-bit aerial RGB: 255.
-# m-SA-crop-type is 8-bit (see SA_CROP_DISK_ORDER): 76.5 is the same 0.3 reflectance as 3000 elsewhere.
+# m-SA-crop-type is stored 8-bit but rescaled to reflectance x 1e4 in the cache (VALUE_SCALE), so 3000 as well.
 DISPLAY_SCALE = {"m-eurosat": 3000.0, "m-brick-kiln": 3000.0, "m-cashew-plant": 3000.0, "m-pv4ger-seg": 255.0,
                  "m-SA-crop-type": 3000.0, "m-nz-cattle": 255.0}
 
