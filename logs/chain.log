@@ -354,3 +354,115 @@ noise: ok (6 decision runs, sigma_seed recorded)
 pot: ok (P1 used 40.74/45, P2 used 7.49/15, 0 screens)
 2026-10-31T21:50:52Z done: verify m-pv4ger-seg main
 2026-10-31T21:50:52Z start: commit m-pv4ger-seg level1 + reflect + level2 + finalize
+2026-10-31T21:50:52Z committed: chain: m-pv4ger-seg level1 + reflect + level2 + finalize
+2026-10-31T21:50:52Z committed: chain: m-pv4ger-seg level1 + reflect + level2 + finalize
+2026-10-31T21:50:54Z done: commit m-pv4ger-seg level1 + reflect + level2 + finalize
+2026-10-31T21:50:54Z start: build_cache m-cashew-plant
+all requested caches exist
+2026-10-31T21:50:56Z done: build_cache m-cashew-plant
+2026-10-31T21:50:56Z start: session m-cashew-plant main level1,reflect,level2,finalize --budget 60
+Session m-cashew-plant__main__chain · arm main · B 60.0 (R 6.0, P1 45.0, P2 15.0) · workspace /home/sagemaker-user/GoTrain/workspace
+[level1] transcript: /home/sagemaker-user/GoTrain/workspace/agent_logs/m-cashew-plant__main__chain.level1.jsonl
+2026-10-31T22:08:36Z chain start (pid 123759)
+2026-10-31T22:08:36Z start: session m-cashew-plant main level1,reflect,level2,finalize --budget 60
+Session m-cashew-plant__main__chain · arm main · B 60.0 (R 6.0, P1 45.0, P2 15.0) · workspace /home/sagemaker-user/GoTrain/workspace
+[level1] transcript: /home/sagemaker-user/GoTrain/workspace/agent_logs/m-cashew-plant__main__chain.level1.jsonl
+
+Tool #1: get_budget
+
+Tool #2: query_ledger
+
+Tool #3: compose_config
+
+Tool #4: launch_training
+
+Tool #5: wait_run
+
+Tool #6: launch_training
+
+Tool #7: wait_run
+
+Tool #8: evaluate_run
+
+Tool #9: record_diagnosis
+
+Tool #10: list_backbones
+
+Tool #11: launch_training
+
+Tool #12: wait_run
+
+Tool #13: launch_training
+
+Tool #14: launch_training
+
+Tool #15: wait_run
+
+Tool #16: launch_training
+
+Tool #17: wait_run
+
+Tool #18: launch_training
+
+Tool #19: wait_run
+
+Tool #20: get_budget
+The Level 1 pot can't fit another 6-minute decision run (4.4 min left), so I'm stopping here.
+
+- **Best by validation score:** m-cashew-plant-0008, resnet18 with SSL4EO-MoCo weights, a U-Net decoder and lr 2e-3, reached val mIoU 0.8458. The harness didn't mark it as the gain to keep, because the improvement over the incumbent was within noise (z +0.42).
+- **Incumbent:** m-cashew-plant-0004, the same model at lr 5e-4, at 0.8177. It is the only change that was kept.
+- **What worked:** switching from ImageNet to SSL4EO-MoCo weights added about 0.14 mIoU. The ImageNet resnet34 baseline scored 0.6777, and its seed repeat scored 0.7446.
+- **What didn't beat noise:**
+  - Raising lr to 1e-3 and 2e-3 gave 0.8331 and 0.8458, both within noise.
+  - resnet50 scored 0.8260, no better than resnet18, and completed fewer epochs in the cap.
+  - The FPN decoder was worse at 0.7542.
+- **Noise:** the two ImageNet runs differ by 0.067 mIoU. That gap is large, so small differences between recipes are hard to call.[level1] end: 20 tool calls, 36.1 min, tokens {'inputTokens': 83269, 'outputTokens': 2874, 'totalTokens': 175614} (transcript m-cashew-plant__main__chain.level1.md)
+[reflect] transcript: /home/sagemaker-user/GoTrain/workspace/agent_logs/m-cashew-plant__main__chain.reflect.jsonl
+
+Tool #1: get_budget
+
+Tool #2: query_ledger
+
+Tool #3: mine_effects
+
+Tool #4: read_playbook
+
+Tool #5: add_lesson
+I wrote one lesson, L005, and left out the other five effects.
+
+**Written**
+- **L005 (lead, z −1.2):** swapping the UNet decoder for FPN, with SSL4EO-MoCo resnet18 on 12-band segmentation, lowered val mIoU by about 0.08. It is a lead because the seed noise (sigma about 0.067) is nearly as large as the drop.
+
+**Left out**
+- **resnet34/imagenet → resnet18/ssl4eo_moco (z +2.08):** this already re-tests L001, so the playbook records it and a new lesson would repeat it. The change also moved the backbone and the weights together.
+- **lr 0.0005 → 0.001 → 0.002 (z +0.19 to +0.42):** too weak for a lesson. The trend is positive, but it is within noise.
+- **resnet18 → resnet50, both SSL4EO (z −0.11):** too weak, and it also re-tests L001.
+
+I didn't request any new knobs.[reflect] end: 5 tool calls, 0.1 min, tokens {'inputTokens': 7163, 'outputTokens': 787, 'totalTokens': 17337} (transcript m-cashew-plant__main__chain.reflect.md)
+[level2] TTA gate m-cashew-plant-0008: z +14.61 -> keep
+[level2] TTA gate m-cashew-plant-0005: z +14.74 -> keep
+[level2] TTA gate m-cashew-plant-0006: z +11.84 -> keep
+[level2] ensemble m-cashew-plant-L2-004: z +12.48 vs m-cashew-plant-0004 -> promoted
+[level2] trained slot m-cashew-plant-0012: done
+[level2] ensemble+slot m-cashew-plant-L2-006: z -0.76 vs m-cashew-plant-L2-004 -> kept out
+[finalize] transcript: /home/sagemaker-user/GoTrain/workspace/agent_logs/m-cashew-plant__main__chain.finalize.jsonl
+
+Tool #1: get_budget
+
+Tool #2: query_ledger
+
+Tool #3: finalize
+Building cache for m-cashew-plant/test (one time)...
+I finalized the dataset. The incumbent was tested once on the test split, and I can't see that score. The vault hash is sha256:23f94b115fbddb467aa1f00f7c216b1330c0038607b4c071e24c49feb61e2e57.
+
+The incumbent is the three-model ensemble with test-time augmentation (m-cashew-plant-L2-004), at 0.8729 validation mIoU. It is level with the best single model with test-time augmentation (0.8730, m-cashew-plant-L2-001) and the four-model ensemble (0.8726, m-cashew-plant-L2-006). I judged further gains to be within noise, so I stopped there.
+
+Budget left was 4.4 GPU minutes in the Level 1 pot and 7.8 minutes in the Level 2 pot.[finalize] end: 3 tool calls, 0.2 min, tokens {'inputTokens': 6396, 'outputTokens': 471, 'totalTokens': 10830} (transcript m-cashew-plant__main__chain.finalize.md)
+2026-10-31T22:52:29Z done: session m-cashew-plant main level1,reflect,level2,finalize --budget 60
+2026-10-31T22:52:29Z start: verify m-cashew-plant main
+transcript: ok (6 agent rows, 8 launches)
+ledger: ok (13 rows)
+noise: ok (6 decision runs, sigma_seed recorded)
+pot: ok (P1 used 40.59/45, P2 used 7.15/15, 0 screens)
+2026-10-31T22:52:30Z done: verify m-cashew-plant main
+2026-10-31T22:52:30Z start: commit m-cashew-plant level1 + reflect + level2 + finalize

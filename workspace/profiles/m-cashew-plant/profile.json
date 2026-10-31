@@ -52,7 +52,7 @@
       "p99": 1035.0
     },
     "B02": {
-      "mean": 629.73,
+      "mean": 629.72,
       "std": 227.96,
       "p1": 316.0,
       "p99": 1210.0
@@ -82,19 +82,19 @@
       "p99": 3176.0
     },
     "B07": {
-      "mean": 2546.84,
+      "mean": 2546.85,
       "std": 448.85,
       "p1": 1716.0,
       "p99": 3699.0
     },
     "B08": {
-      "mean": 2638.32,
+      "mean": 2638.31,
       "std": 414.46,
       "p1": 1828.0,
       "p99": 3684.0
     },
     "B8A": {
-      "mean": 2638.32,
+      "mean": 2638.31,
       "std": 414.46,
       "p1": 1828.0,
       "p99": 3684.0
@@ -143,5 +143,5 @@
     "/home/sagemaker-user/GoTrain/workspace/profiles/m-cashew-plant/samples_false_color.png",
     "/home/sagemaker-user/GoTrain/workspace/profiles/m-cashew-plant/samples_ndvi.png"
   ],
-  "agent_notes": ""
+  "agent_notes": "12-band S2 10m, 256px. Classes imbalanced (background 38%, poorly-managed 28%); fine-grained plantation quality classes look visually similar -> hard. Nodata/uncertain tiny. B8A duplicates B08. Try SSL4EO weights vs imagenet."
 }
