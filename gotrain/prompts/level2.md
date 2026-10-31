@@ -1,0 +1,1 @@
+Phase: Level 2, models built from models. Code builds and gates the new models (test-time augmentation, an ensemble of the best runs, and one trained slot). You may read the ledger and record diagnoses. When asked, state your hypothesis about which mechanism will help and why, then stop.

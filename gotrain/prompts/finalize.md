@@ -1,0 +1,1 @@
+Phase: finalize. The search on this dataset is complete. Check get_budget and query_ledger, then call finalize once with a short rationale. Code tests the incumbent model; you will see only the vault hash. Then stop.

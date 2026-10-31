@@ -109,8 +109,11 @@ def _ensure_seeded() -> None:
 
 
 def test_lines(task: str | None = None) -> list[dict]:
-    _ensure_seeded()
-    lines = [json.loads(l) for l in TESTED.read_text(encoding="utf-8").splitlines() if l.strip()]
+    """Registry lines (read-only: before the first write, the INC-001 seed is returned without creating the file)."""
+    if TESTED.exists():
+        lines = [json.loads(l) for l in TESTED.read_text(encoding="utf-8").splitlines() if l.strip()]
+    else:
+        lines = [INC001]
     return [l for l in lines if task is None or l["task"] == task]
 
 
@@ -134,3 +137,30 @@ def mark_test(task: str, event: str, run_id: str, workspace: str, checkout: str,
             raise PermissionError(f"test split for {task} was already opened (machine-wide test registry)")
         f.write(json.dumps(line) + "\n")
     return line
+
+
+def main() -> None:
+    """Operator checks that write nothing:
+      python -m gotrain.state allowed m-eurosat m-brick-kiln ...   # dry-run allow check of the test registry
+      python -m gotrain.state holder                               # who holds the GPU lock
+    """
+    import sys
+
+    cmd, rest = (sys.argv[1], sys.argv[2:]) if len(sys.argv) > 1 else ("", [])
+    if cmd == "allowed" and rest:
+        print(f"registry: {TESTED}{'' if TESTED.exists() else ' (not created yet; INC-001 seed implied)'}")
+        bad = 0
+        for task in rest:
+            ok = test_allowed(task)
+            bad += not ok
+            print(f"{task}: {'allowed' if ok else 'REFUSED'}"
+                  + "".join(f"\n  {l['event']} {l['time']} {l.get('run_id')}" for l in test_lines(task)))
+        raise SystemExit(1 if bad else 0)
+    if cmd == "holder":
+        print(json.dumps(gpu_lock_holder()))
+        return
+    raise SystemExit(main.__doc__)
+
+
+if __name__ == "__main__":
+    main()

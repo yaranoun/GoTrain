@@ -96,29 +96,69 @@ def evaluate(run_dir: str, split: str = "val", tta: bool = False) -> dict:
     return result
 
 
+def sample_ids(data: dict, split: str) -> tuple[np.ndarray, np.ndarray]:
+    """Per-sample ids and bootstrap group keys. Cache v2 (Step 7) stores real ids/groups; older caches fall back
+    to the position in the split (one group per sample)."""
+    n = len(data["x"]) if "x" in data else len(data["y"])
+    ids = np.asarray(data["ids"]).astype(str) if "ids" in data else np.array([f"{split}-{i:05d}" for i in range(n)])
+    groups = np.asarray(data["groups"]).astype(str) if "groups" in data else ids
+    return ids, groups
+
+
+def write_stats(path: Path, ids, groups, primary: str, classes, y=None, probs=None, confusion=None) -> str:
+    """Write val_stats.npz / test_stats.npz (docs/INTERFACES.md §7); returns its sha256."""
+    arrays = {"ids": np.asarray(ids).astype(str), "groups": np.asarray(groups).astype(str),
+              "primary": np.asarray(primary), "classes": np.asarray(list(classes)).astype(str)}
+    if confusion is not None:
+        arrays["confusion"] = np.asarray(confusion, dtype=np.int64)
+    else:
+        arrays["y"] = np.asarray(y).astype(np.int16)
+        arrays["probs"] = np.asarray(probs).astype(np.float16)
+    path = Path(path)
+    tmp = path.with_name(path.name + ".tmp.npz")
+    np.savez_compressed(tmp, **arrays)
+    tmp.replace(path)
+    if path.stat().st_size >= 1 << 20:
+        raise RuntimeError(f"{path.name} is {path.stat().st_size} bytes; the limit is 1 MB")
+    return _sha256(path.read_bytes())
+
+
 def final_test(run_dir: str, tta: bool) -> dict:
-    """The ONLY place the test split is loaded. Called from tools.finalize, once per task."""
-    from gotrain import is_sandbox
+    """The ONLY place the test split is loaded. Called from runs.finalize, once per task, machine-wide.
+
+    Order: sandbox check -> machine-wide test registry -> this workspace's vault -> registry "opened" ->
+    read test -> test_stats.npz -> vault entry (with its sha256) -> registry "done"."""
+    from gotrain import REPO, WORKSPACE, is_sandbox, state
     from gotrain.ledger import VAULT, append, now, read
 
     if is_sandbox():
         raise PermissionError("final_test is disabled in a sandbox workspace (GOTRAIN_WORKSPACE)")
     run_dir = Path(run_dir)
     task, cfg, device = _load_run(run_dir)
+    if not state.test_allowed(task):
+        raise PermissionError(f"Test split for {task} was already opened (machine-wide test registry). "
+                              f"One test evaluation per task.")
     vault = read(VAULT)
     if any(e["task"] == task for e in vault):
         raise PermissionError(f"Test split for {task} was already used. One test evaluation per task.")
 
+    state.mark_test(task, "opened", run_dir.name, str(WORKSPACE), str(REPO))
     data = _load_arrays(task, "test")
+    ids, groups = sample_ids(data, "test")
+    stats_path = run_dir / "test_stats.npz"
     if info(task)["type"] == "segmentation":
         pred = _model_and_masks(run_dir, task, cfg, device, data, tta)
         ign = ignore_index(task)
         scores = seg.iou_scores(seg.confusion(pred, data["y"], data["n_classes"], ign), ign)
         test_metrics = {k: scores[k] for k in ("miou", "per_class_iou", "pixel_accuracy")}
+        keep = [c for i, c in enumerate(data["classes"]) if i != ign]
+        stats_sha = write_stats(stats_path, ids, groups, "miou", keep,
+                                confusion=seg.per_image_confusion(pred, data["y"], data["n_classes"], ign))
     else:
         probs = _model_and_probs(run_dir, task, cfg, device, data, tta)
         scores, _ = _scores(data["y"].astype(np.int64), probs.argmax(1), data["n_classes"])
         test_metrics = {"accuracy": scores["accuracy"], "macro_f1": scores["macro_f1"]}
+        stats_sha = write_stats(stats_path, ids, groups, "accuracy", data["classes"], y=data["y"], probs=probs)
 
     entry = {
         "task": task,
@@ -127,11 +167,13 @@ def final_test(run_dir: str, tta: bool) -> dict:
         "checkpoint_sha256": _sha256((run_dir / "checkpoint.pt").read_bytes()),
         "tta": tta,
         "test_metrics": test_metrics,
+        "test_stats_sha256": stats_sha,
         "timestamp": now(),
         "prev_entry_hash": vault[-1]["entry_hash"] if vault else None,
     }
     entry["entry_hash"] = _sha256(json.dumps(entry, sort_keys=True).encode())
     append(VAULT, entry)
+    state.mark_test(task, "done", run_dir.name, str(WORKSPACE), str(REPO), vault_entry_hash=entry["entry_hash"])
     return entry
 
 

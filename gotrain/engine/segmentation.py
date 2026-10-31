@@ -97,3 +97,12 @@ def per_image_iou(pred: np.ndarray, y: np.ndarray, n_classes: int, ignore_index:
         cm = confusion(p, t, n_classes, ignore_index)
         out.append(iou_scores(cm, ignore_index)["miou"] if cm.sum() else np.nan)
     return np.array(out)
+
+
+def per_image_confusion(pred: np.ndarray, y: np.ndarray, n_classes: int,
+                        ignore_index: int | None = None) -> np.ndarray:
+    """(N, K, K) int64 pixel confusion per image with the ignore class's row and column dropped (K = C - 1 when
+    there is an ignore class). Summing over N gives the split's confusion: what val_stats / test_stats store."""
+    keep = [c for c in range(n_classes) if c != ignore_index]
+    return np.stack([confusion(p, t, n_classes, ignore_index)[np.ix_(keep, keep)] for p, t in zip(pred, y)]
+                    ).astype(np.int64)

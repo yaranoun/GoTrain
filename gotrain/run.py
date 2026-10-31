@@ -1,22 +1,28 @@
-"""Run the GoTrain agent on one task until it finalizes (or its limits are reached).
+"""Run GoTrain on one dataset: one session, its phases in a fixed order (level1 -> reflect -> level2 -> finalize).
 
 Usage:
-  python -m gotrain.run --task m-eurosat --budget-min 60
-  GOTRAIN_WORKSPACE=.sandbox/workspace python -m gotrain.run --task m-eurosat --budget-min 8   # dry run, no test
+  # dev, in a sandbox (finalize refuses there):
+  GOTRAIN_WORKSPACE=.sandbox/workspace python -m gotrain.run --task m-eurosat --arm dev --budget 10
+  # planning replay, sandbox only: nothing is launched, tokens only
+  GOTRAIN_WORKSPACE=.sandbox/replay-1 python -m gotrain.run --task <task> --arm dev --budget 60 --dry-run
+  # the real chain (main workspace; finalizes!): Level 1 + reflect now, Level 2 + finalize later
+  python -m gotrain.run --task <task> --arm main --budget 60 --phases level1,reflect
+  python -m gotrain.run --task <task> --arm main --session-id <id> --phases level2,finalize
+  # control arm (registered OFF workspace, empty playbook, Level 1 only)
+  GOTRAIN_WORKSPACE=experiments/playbook-ab/<task>/off/workspace python -m gotrain.run --task <task> --arm off --budget 60 --phases level1
 
-- --budget-min sets the task's GPU budget (operator action; the agent cannot change it).
-- Resumable: a new session starts from the ledger (runs so far, best, budget left, profile notes); a run still
-  training from an earlier session is picked up.
-- Transcript: workspace/agent_logs/<task>-<timestamp>.jsonl (every message; images replaced by a placeholder)
-  plus a readable .md next to it.
-- Hard limits: max tool calls and wall-clock minutes. Past them every tool except the wrap-up ones
-  (get_budget, query_ledger, finalize) is refused; a few calls later everything is refused.
+Startup checks (exit before any tool call):
+- main: not a sandbox; the task's scope has no "unknown" feature.
+- off: the workspace is the task's registered OFF workspace; its playbook is empty; phases = level1 only.
+- dev and --dry-run: sandbox only.
+- level2 / finalize: an existing --session-id whose level1 is complete.
+Each phase runs in a fresh agent context with its own transcript: WORKSPACE/agent_logs/<session_id>.<phase>.jsonl
+(+ .md). Records: WORKSPACE/sessions.jsonl (session_start header, phase_done, session_end).
 """
 
 import argparse
 import json
 import time
-from datetime import datetime, timezone
 from pathlib import Path
 
 from strands.experimental.hooks import BeforeToolInvocationEvent
@@ -24,14 +30,14 @@ from strands.hooks import HookProvider, HookRegistry, MessageAddedEvent
 from strands.tools.tools import PythonAgentTool
 
 from gotrain import WORKSPACE, is_sandbox, ledger, runs
-from gotrain.agent import MODEL_ID, build_agent
-from gotrain.engine.tasks import info
+from gotrain import session as sess
+from gotrain.agent import MODEL_ID, PROMPTS, build_agent, phase_tools
+from gotrain.engine import profile as prof
+from gotrain.engine.tasks import info, scope
 
 LOG_DIR = WORKSPACE / "agent_logs"
-WRAP_UP_TOOLS = {"get_budget", "query_ledger", "finalize", "check_run"}
+WRAP_UP_TOOLS = {"get_budget", "query_ledger", "check_run", "wait_run", "finalize"}
 GRACE_CALLS = 8
-EARLY_FINALIZE_BUDGET_FRACTION = 0.2  # finalize allowed once less than this fraction of the budget remains...
-DEFAULT_MIN_RUNS = 3                   # ...or this many runs finished (done or killed)
 
 
 def _now() -> str:
@@ -66,7 +72,7 @@ def _clean_block(block: dict) -> dict:
 
 
 class Transcript(HookProvider):
-    """Appends every conversation message to the session's JSONL as it is added."""
+    """Appends every conversation message to the phase's JSONL as it is added."""
 
     def __init__(self, path: Path):
         self.path = path
@@ -82,31 +88,29 @@ class Transcript(HookProvider):
         self.write({"type": "message", "role": msg["role"], "content": [_clean_block(b) for b in msg["content"]]})
 
 
+def _refusal(event: BeforeToolInvocationEvent, msg: str) -> None:
+    name = event.tool_use["name"]
+    spec = event.selected_tool.tool_spec if event.selected_tool else {
+        "name": name, "description": "", "inputSchema": {"json": {"type": "object"}}}
+    event.selected_tool = PythonAgentTool(
+        name, spec, lambda tool_use, **_: {"toolUseId": tool_use["toolUseId"], "status": "error",
+                                            "content": [{"text": msg}]})
+
+
 class Limits(HookProvider):
-    """Caps tool calls and wall-clock time; refuses a premature finalize; records whether finalize was called."""
+    """Caps tool calls and wall-clock time per phase; in a dry run, stops at the first launch."""
 
-    def __init__(self, task: str, max_tool_calls: int, max_wall_min: float, min_runs: int = DEFAULT_MIN_RUNS):
-        self.task, self.min_runs = task, min_runs
-        self.max_calls, self.deadline = max_tool_calls, time.time() + max_wall_min * 60
-        self.calls, self.finalize_called = 0, False
-
-    def finalize_too_early(self) -> str | None:
-        """Session policy (the tool itself only enforces once-per-task): finalize is irreversible, so it waits
-        until enough runs finished or the budget is nearly used. Lifted once the session limits are hit."""
-        if self.exceeded:
-            return None
-        b = runs.budget(self.task)
-        finished = sum(n for s, n in b["runs"].items() if s in ("done", "killed"))
-        if finished >= self.min_runs or b["remaining_min"] < EARLY_FINALIZE_BUDGET_FRACTION * b["budget_min"]:
-            return None
-        return (f"finalize refused by the session policy: only {finished} finished run(s) and "
-                f"{b['remaining_min']:.1f} of {b['budget_min']:.0f} GPU min left. finalize is irreversible: keep "
-                f"iterating (at least {self.min_runs} finished runs, or until under "
-                f"{int(EARLY_FINALIZE_BUDGET_FRACTION * 100)}% of the budget remains).")
+    def __init__(self, max_tool_calls: int, max_wall_min: float, dry_run: bool = False):
+        self.max_calls, self.deadline, self.dry_run = max_tool_calls, time.time() + max_wall_min * 60, dry_run
+        self.calls, self.finalize_called, self.dry_run_launch = 0, False, None
 
     @property
     def exceeded(self) -> bool:
         return self.calls >= self.max_calls or time.time() > self.deadline
+
+    @property
+    def hard_stopped(self) -> bool:
+        return self.calls > self.max_calls + GRACE_CALLS
 
     def register_hooks(self, registry: HookRegistry, **kwargs) -> None:
         registry.add_callback(BeforeToolInvocationEvent, self.before_tool)
@@ -114,59 +118,57 @@ class Limits(HookProvider):
     def before_tool(self, event: BeforeToolInvocationEvent) -> None:
         name = event.tool_use["name"]
         self.calls += 1
-        hard_stop = self.calls > self.max_calls + GRACE_CALLS
-        msg = None
-        if (self.exceeded and name not in WRAP_UP_TOOLS) or hard_stop:
-            msg = ("Session limit reached (tool calls or wall time). " +
-                   ("No more tool calls." if hard_stop else "Only get_budget, query_ledger, check_run and finalize "
-                                                            "are allowed now: finalize your best run."))
-        elif name == "finalize":
-            msg = self.finalize_too_early()
-            if msg is None:
-                self.finalize_called = True
-        if msg:
-            spec = event.selected_tool.tool_spec if event.selected_tool else {
-                "name": name, "description": "", "inputSchema": {"json": {"type": "object"}}}
-            event.selected_tool = PythonAgentTool(
-                name, spec, lambda tool_use, **_: {"toolUseId": tool_use["toolUseId"], "status": "error",
-                                                    "content": [{"text": msg}]})
+        if self.dry_run_launch is not None:
+            return _refusal(event, "Dry run finished: the first launch was recorded. No more tool calls; stop now.")
+        if self.dry_run and name == "launch_training":
+            self.dry_run_launch = event.tool_use.get("input")
+            return _refusal(event, "DRY RUN (planning replay): this launch was recorded, not run. Stop now.")
+        if self.hard_stopped:
+            return _refusal(event, "Session limit reached (tool calls or wall time). No more tool calls.")
+        if self.exceeded and name not in WRAP_UP_TOOLS:
+            return _refusal(event, "Session limit reached (tool calls or wall time). Only get_budget, query_ledger, "
+                                   "check_run and wait_run are allowed now: wrap up.")
+        if name == "finalize":
+            self.finalize_called = True
 
 
-def _profile_notes(task: str) -> str:
-    p = WORKSPACE / "profiles" / task / "profile.json"
-    return json.loads(p.read_text()).get("agent_notes", "") if p.exists() else ""
-
-
-def kickoff_prompt(task: str) -> str:
-    t, b = info(task), runs.budget(task)
-    lines = [f"Task: {task} ({t['type']}, sensor {t['sensor']}, {runs.n_bands(task)} bands). "
-             f"Primary metric: {b['primary']} on the validation split.",
-             f"GPU budget: {b['remaining_min']:.1f} of {b['budget_min']:.0f} min remaining."]
-    rows = runs.query(task, top_k=15, sort="recent")
+def kickoff_prompt(session: sess.Session, phase: str) -> str:
+    t, b = info(session.task), runs.budget(session)
+    lines = [f"Dataset: {t['type']}, {runs.n_bands(session.task)} bands. Primary metric: {b['primary']} on the "
+             f"validation split.",
+             f"Budget: Level 1 pot {b['P1']['total']:g} GPU min ({b['P1']['left']:.1f} left); every decision run is "
+             f"capped at {b['R']:g} min, a screen at {b['R'] / 3:.2f} min. Level 2 pot {b['P2']['total']:g} min."]
+    rows = runs.query(session, top_k=15, sort="recent")
     if rows:
-        lines.append("You are resuming this task. Runs so far (newest first):")
+        lines.append("This session's runs so far (newest first):")
         for r in rows:
-            lines.append(f"- {r['run_id']} [{r['stage']}, {r['status']}] {r['model']} lr {r['lr']} ep {r['epochs']}: "
-                         f"val {runs.fmt(r['primary'], r['val'])}"
-                         + (f" (TTA {runs.fmt(r['primary'], r['val_tta'])})" if r["val_tta"] is not None else "")
-                         + f"; hypothesis: {r['hypothesis'][:150]}")
-        notes = _profile_notes(task)
-        if notes:
-            lines.append(f"Your profile notes: {notes}")
-    if is_sandbox():
-        lines.append("SANDBOX dry run: finalize will be refused here. Call it once at the end anyway, then stop.")
-    lines.append("Follow the workflow and finish by calling finalize once.")
+            lines.append(f"- {r['run_id']} [{r['stage']}, {r['status']}] {r['model']} lr {r['lr']}: "
+                         f"val {runs.fmt(r['primary'], r['val'])}, {r['outcome']}; hypothesis: {r['hypothesis'][:150]}")
+    if phase == "level1":
+        lines.append("Start Level 1 now." if not rows else "Resume Level 1.")
+    elif phase == "reflect":
+        lines.append("Level 1 is over. Reflect now: turn this session's measured effects into lessons.")
+    elif phase == "level2":
+        lines.append("Level 2 now.")
+    elif phase == "finalize":
+        if is_sandbox():
+            lines.append("SANDBOX: finalize will be refused here. Call it once anyway, then stop.")
+        lines.append("Finalize now.")
+    if session.dry_run:
+        lines.append("DRY RUN (planning replay): plan as usual; your first launch is recorded, not run.")
     return "\n".join(lines)
 
 
-def nudge_prompt(task: str) -> str:
-    b = runs.budget(task)
-    running = [r for r in runs.query(task, top_k=50, sort="recent") if r["status"] == "running"]
-    if b["remaining_min"] < 1:
-        return "The GPU budget is used up. Call finalize now with your best run (status done)."
-    return (f"You stopped without calling finalize. {b['remaining_min']:.1f} GPU min remain"
-            + (f"; {running[0]['run_id']} is still running (wait_run)" if running else "")
-            + ". Continue the workflow, or finalize your best run if further gains are unlikely.")
+def nudge_prompt(session: sess.Session, phase: str) -> str | None:
+    b = runs.budget(session)
+    if phase == "level1" and b["P1"]["left"] >= session.R:
+        running = [r for r in runs.query(session, top_k=50, sort="recent") if r["status"] == "running"]
+        return (f"The Level 1 pot still has {b['P1']['left']:.1f} GPU min, room for another decision run"
+                + (f"; {running[0]['run_id']} is still running (wait_run)" if running else "")
+                + ". Continue Level 1.")
+    if phase == "finalize" and not b["finalized"] and not is_sandbox():
+        return "This dataset is not finalized yet. Call finalize once with a short rationale."
+    return None
 
 
 def render_markdown(jsonl: Path) -> Path:
@@ -176,10 +178,10 @@ def render_markdown(jsonl: Path) -> Path:
                for b in r["content"] if "toolResult" in b}
     out, last_prompt = [], None
     for rec in records:
-        if rec["type"] == "session_start":
-            out.append(f"# GoTrain session: {rec['task']}\n\nStarted {rec['time']} · model {rec['model']} · budget "
-                       f"{rec['budget_min']} GPU min · {'SANDBOX' if rec['sandbox'] else 'real workspace'} · "
-                       f"{rec['code_version']}\n")
+        if rec["type"] == "phase_start":
+            out.append(f"# GoTrain session {rec['session_id']} · phase {rec['phase']}\n\nStarted {rec['time']} · "
+                       f"model {rec['model']} · arm {rec['arm']} · B {rec['B']} · R {rec['R']} · "
+                       f"{'SANDBOX' if rec['sandbox'] else 'real workspace'} · code {rec['code_tree']}\n")
         elif rec["type"] == "prompt":
             last_prompt = rec["text"]
             out.append(f"## Operator prompt ({rec['time']})\n\n{rec['text']}\n")
@@ -201,66 +203,167 @@ def render_markdown(jsonl: Path) -> Path:
                         body = body if len(body) <= 1500 else body[:1500] + " …"
                         out.append(f"← [{res['status']}]\n```\n{body}\n```\n")
         elif rec["type"] == "session_end":
-            out.append(f"## Session end ({rec['time']})\n\n```\n{json.dumps({k: v for k, v in rec.items() if k not in ('type', 'time')}, indent=1)}\n```\n")
+            out.append(f"## Phase end ({rec['time']})\n\n```\n"
+                       f"{json.dumps({k: v for k, v in rec.items() if k not in ('type', 'time')}, indent=1)}\n```\n")
     md = jsonl.with_suffix(".md")
     md.write_text("\n".join(out))
     return md
 
 
-def main() -> None:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--task", required=True)
-    ap.add_argument("--budget-min", type=float, help="set the task's GPU budget (minutes) before starting")
-    ap.add_argument("--max-tool-calls", type=int, default=150)
-    ap.add_argument("--max-wall-min", type=float, help="default: 2 x budget + 30")
-    ap.add_argument("--max-nudges", type=int, default=3, help="re-prompts if the agent stops without finalizing")
-    ap.add_argument("--min-runs", type=int, default=DEFAULT_MIN_RUNS,
-                    help="finished runs required before finalize (unless the budget is nearly used)")
-    args = ap.parse_args()
+def _tokens(agent) -> dict:
+    u = dict(agent.event_loop_metrics.accumulated_usage)
+    return {"inputTokens": u.get("inputTokens", 0), "outputTokens": u.get("outputTokens", 0),
+            "totalTokens": u.get("totalTokens", 0)}
 
-    task = args.task
-    info(task)
-    if args.budget_min is not None:
-        runs.set_budget(task, args.budget_min)
-    b = runs.budget(task)
-    if b["finalized"]:
-        raise SystemExit(f"{task} is already finalized; nothing to do.")
+
+def run_phase(session: sess.Session, phase: str, max_tool_calls: int, max_wall_min: float, max_nudges: int) -> dict:
+    tools, missing = phase_tools(session, phase)
+    if not (PROMPTS / f"{phase}.md").exists():
+        print(f"[{phase}] skipped: gotrain/prompts/{phase}.md is not built yet", flush=True)
+        return {"phase": phase, "skipped": True}
+    if missing:
+        print(f"[{phase}] tools not built yet, left out: {missing}", flush=True)
 
     LOG_DIR.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    transcript = Transcript(LOG_DIR / f"{task}-{stamp}.jsonl")
-    limits = Limits(task, args.max_tool_calls, args.max_wall_min or 2 * b["budget_min"] + 30, args.min_runs)
-    transcript.write({"type": "session_start", "task": task, "budget_min": b["budget_min"],
-                      "remaining_min": b["remaining_min"], "model": MODEL_ID, "sandbox": is_sandbox(),
-                      "workspace": str(WORKSPACE), "code_version": runs._code_version(),
-                      "max_tool_calls": args.max_tool_calls})
-    print(f"Transcript: {transcript.path}\nWorkspace: {WORKSPACE}{' (SANDBOX)' if is_sandbox() else ''}", flush=True)
+    transcript = Transcript(LOG_DIR / f"{session.session_id}.{phase}.jsonl")
+    limits = Limits(max_tool_calls, max_wall_min, session.dry_run)
+    transcript.write({"type": "phase_start", "session_id": session.session_id, "phase": phase, "task": session.task,
+                      "arm": session.arm, "B": session.B, "R": session.R, "model": MODEL_ID, "sandbox": is_sandbox(),
+                      "workspace": str(WORKSPACE), **sess.code_identity(), "prompt_hash": sess.prompt_hash(),
+                      "tools": [t.tool_name for t in tools], "dry_run": session.dry_run})
+    print(f"[{phase}] transcript: {transcript.path}", flush=True)
 
-    agent = build_agent(hooks=[transcript, limits])
-    t0, prompt, error = time.time(), kickoff_prompt(task), None
+    agent = build_agent(session, phase, hooks=[transcript, limits])
+    t0, prompt, error = time.time(), kickoff_prompt(session, phase), None
     try:
-        for attempt in range(1 + args.max_nudges):
+        for attempt in range(1 + max_nudges):
             transcript.write({"type": "prompt", "text": prompt})
             agent(prompt)
-            b = runs.budget(task)
-            if b["finalized"] or (limits.finalize_called and is_sandbox()) or limits.calls > limits.max_calls + GRACE_CALLS:
+            if session.dry_run or limits.hard_stopped or limits.exceeded:
                 break
-            prompt = nudge_prompt(task)
+            if phase == "finalize" and limits.finalize_called and (is_sandbox() or runs.finalized(session.task)):
+                break
+            prompt = nudge_prompt(session, phase)
+            if prompt is None:
+                break
+        if phase == "level1" and not session.dry_run:  # never end Level 1 with a run still training
+            for r in runs.query(session, top_k=50, sort="recent"):
+                if r["status"] == "running":
+                    runs.wait(r["run_id"], max_minutes=session.R + 5, session=session)
     except Exception as e:  # keep the transcript complete even if the session crashes
         error = f"{type(e).__name__}: {e}"
         raise
     finally:
-        b = runs.budget(task)
-        vault = [e for e in ledger.read(ledger.VAULT) if e["task"] == task]
-        usage = dict(agent.event_loop_metrics.accumulated_usage)
-        transcript.write({"type": "session_end", "finalized": b["finalized"],
-                          "test_metrics": vault[-1]["test_metrics"] if vault else None,
-                          "finalized_run": vault[-1]["run_id"] if vault else None,
-                          "best_val": b["best"], "gpu_min_used": b["used_min"], "runs": b["runs"],
-                          "tool_calls": limits.calls, "wall_min": round((time.time() - t0) / 60, 1),
-                          "tokens": usage, "error": error})
+        b = runs.budget(session)
+        end = {"type": "session_end", "session_id": session.session_id, "phase": phase,
+               "finalized": b["finalized"], "incumbent": b["incumbent"], "P1": b["P1"], "P2": b["P2"],
+               "runs": b["runs"], "tool_calls": limits.calls, "wall_min": round((time.time() - t0) / 60, 1),
+               "tokens": _tokens(agent), "dry_run_launch": limits.dry_run_launch, "error": error}
+        transcript.write(end)
         md = render_markdown(transcript.path)
-        print(f"\nSession end. Finalized: {b['finalized']}. Transcript: {transcript.path} (+ {md.name})", flush=True)
+        print(f"[{phase}] end: {limits.calls} tool calls, {end['wall_min']} min, tokens {end['tokens']} "
+              f"(transcript {md.name})", flush=True)
+    return end
+
+
+def _startup_checks(args, playbook: Path) -> None:
+    task_scope = scope(args.task)
+    if args.arm == "main":
+        if is_sandbox():
+            raise SystemExit("arm main runs only in the main workspace (unset GOTRAIN_WORKSPACE); use --arm dev here")
+        if "unknown" in task_scope.values():
+            raise SystemExit(f"arm main refuses a task with an unknown scope feature: {task_scope}")
+    if args.arm == "off":
+        if WORKSPACE != sess.off_workspace(args.task):
+            raise SystemExit(f"arm off must run in its registered workspace {sess.off_workspace(args.task)} "
+                             f"(GOTRAIN_WORKSPACE), not {WORKSPACE}")
+        if playbook.exists() and playbook.stat().st_size > 0:
+            raise SystemExit(f"arm off needs an empty playbook; {playbook} is not empty")
+        if args.playbook_snapshot:
+            raise SystemExit("arm off never reads a playbook snapshot")
+        if set(args.phases) != {"level1"}:
+            raise SystemExit("arm off runs Level 1 only (--phases level1)")
+    if args.arm == "dev" and not is_sandbox():
+        raise SystemExit("arm dev runs only in a sandbox (set GOTRAIN_WORKSPACE)")
+    if args.dry_run and not is_sandbox():
+        raise SystemExit("--dry-run is allowed only in a sandbox")
+    if args.playbook_snapshot and args.arm != "main":
+        raise SystemExit("--playbook-snapshot is for arm main only")
+    if {"level2", "finalize"} & set(args.phases) and "level1" not in args.phases:
+        if not args.session_id:
+            raise SystemExit("level2 / finalize need --session-id of a session whose level1 is complete")
+        if "level1" not in sess.completed_phases(args.session_id):
+            raise SystemExit(f"session {args.session_id} has not completed level1")
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--task", required=True)
+    ap.add_argument("--arm", choices=sess.ARMS, default="dev")
+    ap.add_argument("--budget", type=float, help="B, GPU minutes per dataset (new sessions; R = B/10, P1 = 0.75 B)")
+    ap.add_argument("--phases", default="level1,reflect,level2,finalize",
+                    help="comma-separated, in order: level1,reflect,level2,finalize")
+    ap.add_argument("--session-id", help="reopen an existing session (later phases, or resume)")
+    ap.add_argument("--playbook-snapshot", help="arm main: read lessons from this frozen snapshot (read-only)")
+    ap.add_argument("--dry-run", action="store_true", help="sandbox only: planning replay, nothing launched")
+    ap.add_argument("--max-tool-calls", type=int, default=150, help="per phase")
+    ap.add_argument("--max-wall-min", type=float, help="per phase; default 2 x P1 + 30")
+    ap.add_argument("--max-nudges", type=int, default=3)
+    args = ap.parse_args()
+    args.phases = [p.strip() for p in args.phases.split(",") if p.strip()]
+
+    info(args.task)
+    snapshot = Path(args.playbook_snapshot).resolve() if args.playbook_snapshot else None
+    playbook = snapshot or (WORKSPACE / "playbook.jsonl")
+    _startup_checks(args, playbook)
+    if args.session_id and any(r["type"] == "session_start" for r in sess.records(args.session_id)):
+        B = sess.header(args.session_id)["B"]
+    elif args.budget is None:
+        raise SystemExit("--budget is required for a new session")
+    else:
+        B = args.budget
+    if runs.finalized(args.task) and "finalize" in args.phases and not is_sandbox():
+        raise SystemExit(f"{args.task} is already finalized; nothing to do.")
+
+    session = sess.start(args.task, args.arm, tuple(args.phases), B, playbook,
+                         playbook_readonly=bool(snapshot) or args.arm == "off", model=MODEL_ID,
+                         scope=scope(args.task), session_id=args.session_id, dry_run=args.dry_run)
+    print(f"Session {session.session_id} · arm {session.arm} · B {session.B} (R {session.R}, P1 {session.P1}, "
+          f"P2 {session.P2}) · workspace {WORKSPACE}{' (SANDBOX)' if is_sandbox() else ''}", flush=True)
+
+    done, t0, totals, error = sess.completed_phases(session.session_id), time.time(), [], None
+    try:
+        for phase in args.phases:
+            if phase in done:
+                print(f"[{phase}] already complete in this session; skipped", flush=True)
+                continue
+            if phase == "level1" and "level1" not in done:
+                p = prof.profile_dir(session.task) / "profile.json"
+                if p.exists() and not runs.session_runs(session):
+                    prof.save_notes(session.task, "")  # profile notes are cleared at session start
+            if phase == "reflect":
+                try:
+                    from gotrain import playbook as pb
+                    pb.record_tests(session)
+                except ModuleNotFoundError:
+                    print("[reflect] gotrain.playbook not built yet: no lesson tests recorded", flush=True)
+            wall = args.max_wall_min or 2 * session.P1 + 30
+            end = run_phase(session, phase, args.max_tool_calls, wall, args.max_nudges)
+            totals.append(end)
+            if end.get("skipped") or session.dry_run:
+                continue
+            if end.get("error") is None:
+                sess.phase_done(session.session_id, phase)
+    except Exception as e:
+        error = f"{type(e).__name__}: {e}"
+        raise
+    finally:
+        tok = {k: sum(t.get("tokens", {}).get(k, 0) for t in totals) for k in ("inputTokens", "outputTokens",
+                                                                             "totalTokens")}
+        ledger.append(sess.SESSIONS, {"type": "session_end", "session_id": session.session_id, "time": _now(),
+                                      "phases_run": [t["phase"] for t in totals if not t.get("skipped")],
+                                      "tokens": tok, "tool_calls": sum(t.get("tool_calls", 0) for t in totals),
+                                      "wall_min": round((time.time() - t0) / 60, 1), "error": error})
 
 
 if __name__ == "__main__":

@@ -6,7 +6,7 @@ Built with Strands + Claude Sonnet on Bedrock (`eu.anthropic.claude-sonnet-5-5`,
 
 ## Hard rules
 - **Never credit Claude** in commits, PRs, code or docs: no `Co-Authored-By: Claude`, no "Generated with Claude". Commits use the user's git identity only.
-- **Test split is touched once per task**, only via `gotrain.engine.evaluate.final_test` (wrapped by `finalize`). Everything else tunes on val. `data.load_split` refuses `split="test"`; never bypass it.
+- **Test split is touched once per task, machine-wide**, only via `gotrain.engine.evaluate.final_test` (wrapped by `finalize`), which checks the test registry in `$GOTRAIN_STATE_DIR` (default `~/.gotrain-state/tested.jsonl`, INC-001 seeded as voided). Everything else tunes on val. `data.load_split` refuses `split="test"`; never bypass it. Guards are tested only with synthetic pytest (`tests/`).
 - **Never call `finalize` while testing.** Tool checks / experiments with the tools run in a sandbox: set `GOTRAIN_WORKSPACE=.sandbox/workspace` before importing gotrain (own ledger/runs/logs/vault; `finalize` and `final_test` refuse there). See INC-001 below.
 - **Keep every score traceable**: tools write the ledger (`workspace/ledger.jsonl`), the agent only adds hypothesis/diagnosis text. Keep agent logs.
 - **No large files in git**: checkpoints, `.npz` caches, datasets, zips are gitignored. Small results (configs, metrics, history, plots, ledger, logs) are committed.
@@ -34,10 +34,17 @@ gotrain/tools/    Strands @tool wrappers: explore.py, train.py (list_backbones, 
                   check_run, wait_run, kill_run), diagnose.py (evaluate_run, record_diagnosis, compare_runs,
                   query_ledger), finalize.py
 gotrain/ledger.py JSONL ledger/playbook/vault helpers
+gotrain/state.py  machine-wide GPU lock + test registry ($GOTRAIN_STATE_DIR)
+gotrain/session.py sessions (arm, phases, B/R/P1/P2, header with code/prompt/playbook hashes)
+gotrain/knobs.py  knob groups + recipe hash · gotrain/noise.py (Step 7) · gotrain/hooks.py (serial tools, output caps)
+gotrain/prompts/  system.md + one section per phase (hygiene-tested)
+tests/            pytest gates (CPU, synthetic; never the real test split)
 notebooks/        step3_tools_check.ipynb: every tool by hand, in a sandbox workspace
-gotrain/agent.py  agent + system prompt (workflow) + tool list
-gotrain/run.py    session driver: budget, transcript (agent_logs/*.jsonl + .md), limits, early-finalize policy, resume
-docs/             ledger_and_tools.md (record formats + tool list), PLAN.md (build plan)
+gotrain/agent.py  agent per phase: prompt files + PHASE_TOOLS (tools bound to the session via make_tools)
+gotrain/run.py    session driver: --arm main|off|dev, --phases level1,reflect,level2,finalize, startup checks,
+                  one transcript per phase (agent_logs/<session_id>.<phase>.jsonl + .md), limits, resume
+docs/             CREATIVE_PLAN.md (approved plan, Steps 6+), INTERFACES.md (contract), SECOND_SESSION.md,
+                  ledger_and_tools.md (record formats + tool list), PLAN.md (Steps 0-5)
 workspace/        runs/, profiles/, ledger.jsonl, vault.jsonl, vault_incidents.jsonl, budget.json, playbook.jsonl (cache/ gitignored)
 ```
 
@@ -48,8 +55,11 @@ python -m gotrain.engine.profile m-eurosat
 python -m gotrain.engine.train --task m-eurosat --set backbone=resnet50 weights=ssl4eo_moco batch_size=32
 python -m gotrain.engine.train --task m-pv4ger-seg --set backbone=resnet34 weights=imagenet epochs=20
 python -m gotrain.engine.evaluate workspace/runs/m-eurosat/m-eurosat-0002 --tta
-nohup python -m gotrain.run --task m-eurosat --budget-min 60 > logs/agent-m-eurosat.log 2>&1 &   # the agent (finalizes!)
-GOTRAIN_WORKSPACE=.sandbox/workspace python -m gotrain.run --task m-eurosat --budget-min 8          # dry run, no test
+GOTRAIN_WORKSPACE=.sandbox/workspace python -m gotrain.run --task m-eurosat --arm dev --budget 10 --phases level1   # sandbox
+GOTRAIN_WORKSPACE=.sandbox/replay python -m gotrain.run --task m-eurosat --arm dev --budget 60 --phases level1 --dry-run  # tokens only
+python -m gotrain.state allowed m-eurosat m-brick-kiln     # write-free test-registry check; `holder` = GPU lock holder
+python -m pytest -q tests/                                  # gates (CPU, synthetic)
+# the real chain runs from scripts/chain.sh after the freeze (Step 10), never by hand
 ```
 
 ## Gotchas
@@ -63,8 +73,8 @@ GOTRAIN_WORKSPACE=.sandbox/workspace python -m gotrain.run --task m-eurosat --bu
 - SSL4EO weights (torchgeo) expect 13 canonical S2 bands, input /10000, 224px.
 - Strands tools can return images: `{"status": "success", "content": [{"text": ...}, {"image": {"format": "png", "source": {"bytes": ...}}}]}`.
 
-## Agent workflow (per task)
-profile → recall playbook → plan candidates → screen cheaply → train best → diagnose failures (look at images) → iterate within budget → finalize once (TTA, test vault, model card) → reflect (write lessons).
+## Agent workflow (per task; CREATIVE_PLAN.md §4.1)
+profile → read playbook → compose first config → Level 1 (pot P1, fixed run cap R, noise gate) → reflect (write lessons, before any test) → Level 2 (pot P2) → finalize once (code picks the incumbent; the agent sees only the vault hash) → publish.
 
 ## Incidents (disclosed)
 - **INC-001 (31 Oct): m-eurosat test split evaluated once by accident** while hand-checking the Step 3 tools: a notebook passed the killed tool-check run `m-eurosat-0005` (5 epochs) to `finalize`; test accuracy 0.895 was observed. No model or decision was chosen with it. The team voided the vault entry (kept verbatim in `workspace/vault_incidents.jsonl`); m-eurosat will be finalized once more with a model selected on val only, and that score must be reported together with this incident. Fixes: finalize accepts only `done` runs; tool checks run in a sandbox where finalize/final_test refuse.
@@ -78,4 +88,5 @@ profile → recall playbook → plan candidates → screen cheaply → train bes
 - m-pv4ger-seg val: U-Net ResNet34 ImageNet 320px, 20 ep **0.955 mIoU**, **0.959 with TTA** (11.7 min).
 - m-brick-kiln val: ResNet18 ImageNet 64px, 30 ep **98.9%** acc (2.3 min); TTA 98.6% (no gain).
 - m-cashew-plant val (class 0 ignored): U-Net ResNet34 ImageNet 12 bands, 20 ep **0.738 mIoU**, **0.778 with TTA** (5.2 min); still improving at ep 20.
-- Next: see `docs/PLAN.md` (Step 0 onward). Stop before the creative phase and ask Aya.
+- **Creative phase (31 Oct evening):** plan approved (`docs/CREATIVE_PLAN.md`); deadline T = 11:00 Beirut on 1 Nov; a second coding session builds Steps 5, 8, 9, analyze.py and session verify (`docs/SECOND_SESSION.md`) against `docs/INTERFACES.md`. Cut: data-state detector, dropping old images, unknown-scope wildcard. Pitch: 3–4 min total (slides + upbeat video).
+- **Step 6 done:** sessions + arms + phases, tools bound to the session, machine-wide GPU lock and test registry, code-chosen finalize returning only the vault hash, `test_stats.npz`, output caps, prompts in files with a hygiene test. Next: Step 7 (fixed run budget, noise gate, cache v2, Sentinel kill).

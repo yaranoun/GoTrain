@@ -8,6 +8,12 @@ __pycache__/
 data/
 workspace/cache/
 *.npz
+*.npy
+*.tmp
+# Per-sample val/test outputs ARE tracked (small; test_stats can never be rebuilt)
+!workspace/runs/**/val_stats.npz
+!experiments/**/val_stats.npz
+!workspace/runs/**/test_stats.npz
 *.hdf5
 *.pt
 *.ckpt

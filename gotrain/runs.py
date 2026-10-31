@@ -4,10 +4,12 @@ query the ledger, budgets, finalize.
 Plain Python (no Strands), so the agent tools, notebooks and a future MCP server share one
 implementation. Every state change is appended to the ledger here; the agent only supplies free
 text (the hypothesis). Rules enforced here, not left to the agent:
-  - one training at a time (one GPU, 15 GB RAM: two trainings can get OOM-killed);
-  - a per-task GPU-minute budget (set by the operator with set_budget, not by the agent); each run
-    gets time_limit_min = remaining budget, so it cannot overshoot;
-  - the test split is only touched by finalize(), once per task (enforced in engine.evaluate.final_test).
+  - one GPU job machine-wide (gotrain.state lock, inherited by the training subprocess; refused, never waited on);
+  - session scope: every row carries session_id / arm / launched_by; budget pots, outcomes and the incumbent
+    count only the current session's rows, and run-id lookups refuse runs of another task or session;
+  - a fixed per-run cap (R, or R/3 for a screen) and a Level 1 pot P1 (CREATIVE_PLAN.md §4.2);
+  - the test split is only touched by finalize(), once per task machine-wide (engine.evaluate.final_test);
+    finalize picks the incumbent in code and returns only the vault hash.
 """
 
 import csv
@@ -27,7 +29,8 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from gotrain import REPO, WORKSPACE, is_sandbox, ledger
+from gotrain import REPO, WORKSPACE, is_sandbox, ledger, state
+from gotrain.session import Session
 from gotrain.engine.data import load_stats
 from gotrain.engine.models import DECODERS, band_plan, zoo_for
 from gotrain.engine.tasks import CHANNELS, TASKS, info
@@ -35,9 +38,11 @@ from gotrain.engine.train import DEFAULTS, PRIMARY, SUPPORTED, new_run_dir, reso
 
 LOG_BASE = WORKSPACE.parent  # repo root normally; the sandbox folder in a sandbox
 LOGS = LOG_BASE / "logs"
-BUDGET_FILE = WORKSPACE / "budget.json"
-DEFAULT_BUDGET_MIN = 60.0
-EPS = 0.001  # |delta| below this is "no_gain"
+EPS = 0.001  # |delta| below this is "no_gain" (replaced by the noise gate in Step 7)
+LEVEL1_STAGES = ("screen", "train", "seed_repeat")
+AGENT_STAGES = ("screen", "train")
+MAX_SCREENS = 2
+LAUNCHERS = ("agent", "harness", "operator")
 _PROCS: dict[str, subprocess.Popen] = {}  # runs launched by this process (polled, so they get reaped)
 
 
@@ -68,7 +73,7 @@ CONFIG_HELP = {
     "freeze_backbone": "true = train only the head (classification) / decoder (segmentation)",
     "train_fraction": "(0, 1]; < 1 for cheap screening runs",
     "seed": "int",
-    "time_limit_min": "optional; capped at the remaining budget",
+    "time_limit_min": "set by the harness: the fixed per-run cap (screens: a third of it)",
     "band_fill": ("only for 13-band SSL4EO weights on a task missing S2 bands: norm_mean (default; missing bands "
                   "at the normalization mean = 0, same as zeroing those first-conv inputs) | interp_b06 (B06 "
                   "interpolated from B05/B07, others norm_mean)"),
@@ -149,11 +154,19 @@ def validate_config(task: str, config: dict) -> dict:
 
 # --------------------------------------------------------------------------- ledger helpers
 
-def _get(run_id: str) -> dict:
+def _get(run_id: str, session: Session | None = None) -> dict:
+    """A run's latest record. With a session, only that session's runs of its task are visible."""
     rec = ledger.runs().get(run_id)
     if rec is None:
         raise ValueError(f"unknown run_id '{run_id}' (not in the ledger)")
+    if session is not None and (rec.get("task") != session.task or rec.get("session_id") != session.session_id):
+        raise ValueError(f"'{run_id}' is not a run of this session; tools only see the current session's runs")
     return rec
+
+
+def session_runs(session: Session) -> dict[str, dict]:
+    """Latest state of the session's runs (rows without a session_id never count)."""
+    return {rid: r for rid, r in ledger.runs(session.task).items() if r.get("session_id") == session.session_id}
 
 
 def _update(rec: dict, **changes) -> dict:
@@ -269,7 +282,8 @@ def _with_outcome(rec: dict) -> dict:
         if pval is not None:
             out["delta_vs_parent"] = round(val - pval, 5)
     earlier = [_primary_val(r) for r in ledger.runs(rec["task"]).values()
-               if r["run_id"] != rec["run_id"] and r["created_at"] <= rec["created_at"]]
+               if r["run_id"] != rec["run_id"] and r["created_at"] <= rec["created_at"]
+               and r.get("session_id") == rec.get("session_id") and r.get("status") == "done"]
     earlier = [v for v in earlier if v is not None]
     if earlier:
         out["delta_vs_best"] = round(val - max(earlier), 5)
@@ -286,6 +300,23 @@ def _error_hint(text: str) -> str:
     return ""
 
 
+def _exit_time(rec: dict) -> str:
+    """When the training process last wrote anything (status.json or its log): its exit, for charging."""
+    paths = [_run_dir(rec) / "status.json", LOG_BASE / rec["artifacts"]["log"]]
+    mtimes = [p.stat().st_mtime for p in paths if p.exists()]
+    t = datetime.fromtimestamp(max(mtimes), timezone.utc) if mtimes else datetime.now(timezone.utc)
+    return t.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def charged(rec: dict) -> float:
+    """GPU minutes charged to a run: launch to exit, whatever its status (running: launch to now)."""
+    if rec["status"] == "running":
+        return _minutes_since(rec["created_at"])
+    if rec.get("charged_min") is not None:
+        return rec["charged_min"]
+    return rec.get("gpu_minutes") or 0.0
+
+
 def sync() -> None:
     """Reconcile every 'running' ledger record with its process + status.json (finishes, crashes, OOM kills)."""
     for rec in list(ledger.runs().values()):
@@ -297,94 +328,119 @@ def sync() -> None:
             metrics = {k: v for k, v in _read_json(run_dir / "metrics.json").items()}
             metrics.setdefault("val_tta", None)
             rec = {**rec, "metrics": metrics}
-            _update(rec, status="done", finished_at=ledger.now(), gpu_minutes=metrics.get("gpu_minutes"),
+            end = _exit_time(rec)
+            _update(rec, status="done", finished_at=end, gpu_minutes=metrics.get("gpu_minutes"),
+                    charged_min=_minutes_since(rec["created_at"], end),
                     artifacts={**rec["artifacts"], "checkpoint_sha256": _sha256_file(run_dir / "checkpoint.pt")},
                     **_with_outcome(rec))
         elif st.get("status") == "failed" or not _alive(rec):
             tail = _log_tail(rec)
             err = st.get("error") or "process exited without finishing"
             rec = {**rec, "metrics": _partial_metrics(rec)}
-            _update(rec, status="failed", finished_at=ledger.now(), gpu_minutes=_minutes_since(rec["created_at"]),
+            end = _exit_time(rec)
+            _update(rec, status="failed", finished_at=end, gpu_minutes=_minutes_since(rec["created_at"], end),
+                    charged_min=_minutes_since(rec["created_at"], end), failure_reason="process exited",
                     error=err + "." + _error_hint(tail + err), log_tail=tail[-1500:], **_with_outcome(rec))
 
 
 # --------------------------------------------------------------------------- budget
 
-def _budgets() -> dict:
-    return _read_json(BUDGET_FILE)
+def incumbent(session: Session) -> dict | None:
+    """The session's incumbent: Step 6 rule = best finished decision run by val (Step 7: noise-gated)."""
+    done = [r for r in session_runs(session).values()
+            if r["status"] == "done" and r["stage"] == "train" and _primary_val(r) is not None]
+    return max(done, key=lambda r: (_primary_val(r), r["created_at"]), default=None)
 
 
-def set_budget(task: str, minutes: float) -> None:
-    """Operator-only (not an agent tool): GPU minutes allowed for the task."""
-    info(task)
-    b = _budgets()
-    b[task] = float(minutes)
-    BUDGET_FILE.parent.mkdir(parents=True, exist_ok=True)
-    BUDGET_FILE.write_text(json.dumps(b, indent=2))
-
-
-def budget(task: str) -> dict:
-    info(task)
+def budget(session: Session) -> dict:
+    """Session-scoped pots: Level 1 (P1) and Level 2 + finalize (P2), the per-run cap R, runs and incumbent."""
     sync()
-    recs = list(ledger.runs(task).values())
-    used = sum((_minutes_since(r["created_at"]) if r["status"] == "running" else (r.get("gpu_minutes") or 0))
-               for r in recs)
-    total = _budgets().get(task, DEFAULT_BUDGET_MIN)
-    scored = [r for r in recs if _primary_val(r) is not None]
-    best = max(scored, key=_primary_val, default=None)
+    recs = list(session_runs(session).values())
+    used1 = sum(charged(r) for r in recs if r["stage"] in LEVEL1_STAGES)
+    used2 = sum(charged(r) for r in recs if r["stage"] == "level2")
     counts = {}
     for r in recs:
         counts[r["status"]] = counts.get(r["status"], 0) + 1
+    inc = incumbent(session)
     return {
-        "task": task, "budget_min": total, "used_min": round(used, 2), "remaining_min": round(total - used, 2),
-        "runs": counts, "primary": PRIMARY.get(info(task)["type"]),
-        "best": None if best is None else {"run_id": best["run_id"], "val": _primary_val(best),
-                                           "val_tta": _primary_val(best, tta=True)},
-        "finalized": any(e["task"] == task for e in ledger.read(ledger.VAULT)),
+        "task": session.task, "session_id": session.session_id, "B": session.B, "R": session.R,
+        "P1": {"total": session.P1, "used": round(used1, 2), "left": round(session.P1 - used1, 2)},
+        "P2": {"total": session.P2, "used": round(used2, 2), "left": round(session.P2 - used2, 2)},
+        "screens": sum(1 for r in recs if r["stage"] == "screen"), "runs": counts,
+        "primary": PRIMARY.get(info(session.task)["type"]),
+        "incumbent": None if inc is None else {"run_id": inc["run_id"], "val": _primary_val(inc)},
+        "finalized": finalized(session.task),
     }
+
+
+def finalized(task: str) -> bool:
+    """True once the task's test split was opened (machine-wide registry) or this workspace's vault has it."""
+    return (not state.test_allowed(task)) or any(e["task"] == task for e in ledger.read(ledger.VAULT))
 
 
 # --------------------------------------------------------------------------- train
 
-def launch(task: str, config: dict, hypothesis: str, parent_run_id: str | None = None, stage: str = "train") -> dict:
-    """Validate, check budget + GPU availability, start training in the background, write the ledger."""
-    info(task)
+def _train_cmd(run_dir: Path) -> list[str]:
+    return [sys.executable, "-m", "gotrain.engine.train", "--run-dir", str(run_dir)]
+
+
+def launch(session: Session, config: dict, hypothesis: str, parent_run_id: str | None = None,
+           stage: str = "train", launched_by: str = "agent") -> dict:
+    """Validate, check the pot + the machine-wide GPU lock, start training in the background, write the ledger."""
+    task = session.task
     if not (hypothesis or "").strip():
         raise ValueError("hypothesis is required: one or two sentences on what you expect and why")
-    if stage not in ("screen", "train"):
-        raise ValueError("stage must be 'screen' or 'train'")
+    if launched_by not in LAUNCHERS:
+        raise ValueError(f"launched_by must be one of {LAUNCHERS}")
+    allowed = AGENT_STAGES if launched_by == "agent" else LEVEL1_STAGES + ("level2",)
+    if stage not in allowed:
+        raise ValueError(f"stage must be one of {allowed}")
+    if session.dry_run:
+        raise PermissionError("dry run: nothing is launched (planning replay). Stop here.")
     if parent_run_id:
-        parent = _get(parent_run_id)
-        if parent["task"] != task:
-            raise ValueError(f"parent {parent_run_id} is a {parent['task']} run, not {task}")
-    if any(e["task"] == task for e in ledger.read(ledger.VAULT)):
-        raise PermissionError(f"{task} is already finalized; no more training for it")
+        _get(parent_run_id, session)
+    if finalized(task):
+        raise PermissionError("this task is already finalized; no more training for it")
     sync()
     running = [r for r in ledger.runs().values() if r["status"] == "running"]
     if running:
         raise RuntimeError(f"{running[0]['run_id']} is still running; one training at a time (one GPU, 15 GB RAM). "
-                           f"Wait for it (check_run) or stop it (kill_run).")
-    b = budget(task)
-    if b["remaining_min"] < 0.5:
-        raise PermissionError(f"{task} budget exhausted ({b['used_min']}/{b['budget_min']} GPU min); finalize the best run")
+                           f"Wait for it (wait_run) or stop it (kill_run).")
+    b = budget(session)
+    cap = session.screen_cap if stage == "screen" else session.R
+    if stage in LEVEL1_STAGES and b["P1"]["left"] < cap:
+        raise PermissionError(f"the Level 1 pot has {b['P1']['left']:.2f} GPU min left, less than one run "
+                              f"({cap:g} min): Level 1 is over")
+    if stage == "level2" and b["P2"]["left"] < cap:
+        raise PermissionError(f"the Level 2 pot has {b['P2']['left']:.2f} GPU min left, less than one run ({cap:g} min)")
+    if stage == "screen" and b["screens"] >= MAX_SCREENS:
+        raise PermissionError(f"at most {MAX_SCREENS} screen runs per dataset; launch a decision run (stage 'train')")
 
-    config = dict(config or {})
-    cap = round(b["remaining_min"], 1)
-    config["time_limit_min"] = min(config["time_limit_min"], cap) if config.get("time_limit_min") else cap
+    config = {k: v for k, v in dict(config or {}).items() if k != "time_limit_min"}
+    config["time_limit_min"] = cap
     cfg = validate_config(task, config)
 
-    run_dir = new_run_dir(task, config)
-    run_id = run_dir.name
-    LOGS.mkdir(exist_ok=True)
-    log = LOGS / f"{run_id}.log"
-    with log.open("w") as f:
-        proc = subprocess.Popen([sys.executable, "-m", "gotrain.engine.train", "--run-dir", str(run_dir)],
-                                cwd=REPO, stdout=f, stderr=subprocess.STDOUT, start_new_session=True)
+    try:
+        fd = state.acquire_gpu(f"{session.arm}:{task}", session_id=session.session_id, workspace=str(WORKSPACE))
+    except state.Busy as e:
+        raise RuntimeError(str(e)) from None
+    try:
+        run_dir = new_run_dir(task, config)
+        run_id = run_dir.name
+        LOGS.mkdir(exist_ok=True)
+        log = LOGS / f"{run_id}.log"
+        with log.open("w") as f:
+            proc = subprocess.Popen(_train_cmd(run_dir), cwd=REPO, stdout=f, stderr=subprocess.STDOUT,
+                                    start_new_session=True, pass_fds=(fd,))
+        state.set_holder_pid(proc.pid)
+    finally:
+        os.close(fd)  # the child keeps the lock until it exits
     _PROCS[run_id] = proc
     rec = {
         "run_id": run_id, "task": task, "task_type": info(task)["type"], "stage": stage,
+        "session_id": session.session_id, "arm": session.arm, "launched_by": launched_by,
         "parent_run_id": parent_run_id, "status": "running", "created_at": ledger.now(), "finished_at": None,
-        "gpu_minutes": 0.0, "hypothesis": hypothesis.strip(), "config": cfg,
+        "gpu_minutes": 0.0, "charged_min": None, "run_cap_min": cap, "hypothesis": hypothesis.strip(), "config": cfg,
         "config_hash": _sha256_bytes(json.dumps({"task": task, **cfg}, sort_keys=True).encode()),
         "code_version": _code_version(), "metrics": None, "delta_vs_parent": None, "delta_vs_best": None,
         "outcome": None, "pid": proc.pid,
@@ -396,9 +452,9 @@ def launch(task: str, config: dict, hypothesis: str, parent_run_id: str | None =
     return rec
 
 
-def check(run_id: str) -> dict:
+def check(run_id: str, session: Session | None = None) -> dict:
     sync()
-    rec = _get(run_id)
+    rec = _get(run_id, session)
     st = _read_json(_run_dir(rec) / "status.json")
     hist = _history(rec)
     primary = PRIMARY[rec["task_type"]]
@@ -420,26 +476,26 @@ def check(run_id: str) -> dict:
     return out
 
 
-def wait(run_id: str, max_minutes: float = 15.0, poll_s: float = 10.0) -> dict:
+def wait(run_id: str, max_minutes: float = 15.0, poll_s: float = 10.0, session: Session | None = None) -> dict:
     """Block until the run stops running or max_minutes pass; returns check(run_id). Saves the agent polling."""
     deadline = time.time() + max(0.0, max_minutes) * 60
     while True:
-        c = check(run_id)
+        c = check(run_id, session)
         if c["status"] != "running" or time.time() >= deadline:
             return c
         time.sleep(poll_s)
 
 
-def record_diagnosis(run_id: str, notes: str) -> dict:
+def record_diagnosis(run_id: str, notes: str, session: Session | None = None) -> dict:
     """The agent's reading of a run (what the errors suggest); stored in the run record."""
     if not (notes or "").strip():
         raise ValueError("notes are required")
-    return _update(_get(run_id), diagnosis=notes.strip())
+    return _update(_get(run_id, session), diagnosis=notes.strip())
 
 
-def kill(run_id: str, reason: str) -> dict:
+def kill(run_id: str, reason: str, session: Session | None = None) -> dict:
     sync()
-    rec = _get(run_id)
+    rec = _get(run_id, session)
     if rec["status"] != "running":
         raise ValueError(f"{run_id} is {rec['status']}, not running")
     if not (reason or "").strip():
@@ -463,7 +519,9 @@ def kill(run_id: str, reason: str) -> dict:
     (run_dir / "status.json").write_text(json.dumps({**st, "status": "killed", "reason": reason}))
     (run_dir / "checkpoint.pt.tmp").unlink(missing_ok=True)
     rec = {**rec, "metrics": _partial_metrics(rec)}
-    return _update(rec, status="killed", finished_at=ledger.now(), gpu_minutes=_minutes_since(rec["created_at"]),
+    end = ledger.now()
+    return _update(rec, status="killed", finished_at=end, gpu_minutes=_minutes_since(rec["created_at"], end),
+                   charged_min=_minutes_since(rec["created_at"], end),
                    error=f"killed: {reason.strip()}",
                    artifacts={**rec["artifacts"], "checkpoint_sha256": _sha256_file(run_dir / "checkpoint.pt")},
                    **_with_outcome(rec))
@@ -471,12 +529,12 @@ def kill(run_id: str, reason: str) -> dict:
 
 # --------------------------------------------------------------------------- diagnose
 
-def evaluate(run_id: str, tta: bool = False) -> dict:
+def evaluate(run_id: str, tta: bool = False, session: Session | None = None) -> dict:
     """Validation metrics + plots for a finished (or killed) run; stored in the ledger record."""
     from gotrain.engine import evaluate as ev
 
     sync()
-    rec = _get(run_id)
+    rec = _get(run_id, session)
     if rec["status"] not in ("done", "killed"):
         raise ValueError(f"{run_id} is {rec['status']}; evaluate needs a finished or killed run")
     run_dir = _run_dir(rec)
@@ -495,12 +553,12 @@ def evaluate(run_id: str, tta: bool = False) -> dict:
             "plots": [str(REPO / p) if not Path(p).is_absolute() else p for p in res["plots"]]}
 
 
-def compare(run_ids: list[str]) -> dict:
+def compare(run_ids: list[str], session: Session | None = None) -> dict:
     """Config diff + metric table + overlaid curves (PNG bytes)."""
     sync()
     if not 2 <= len(run_ids) <= 6:
         raise ValueError("compare 2 to 6 runs")
-    recs = [_get(r) for r in run_ids]
+    recs = [_get(r, session) for r in run_ids]
     if len({r["task"] for r in recs}) > 1:
         raise ValueError("compare runs of the same task")
     primary = PRIMARY[recs[0]["task_type"]]
@@ -527,12 +585,10 @@ def compare(run_ids: list[str]) -> dict:
     return {"primary": primary, "config_diff": diff, "table": table, "curves_png": buf.getvalue()}
 
 
-def query(task: str | None = None, stage: str | None = None, top_k: int = 10, sort: str = "val") -> list[dict]:
-    """Compact rows of past runs, best first (sort='val') or newest first (sort='recent')."""
-    if task:
-        info(task)
+def query(session: Session, stage: str | None = None, top_k: int = 10, sort: str = "val") -> list[dict]:
+    """The session's runs as compact rows, best first (sort='val') or newest first (sort='recent')."""
     sync()
-    recs = [r for r in ledger.runs(task).values() if stage is None or r["stage"] == stage]
+    recs = [r for r in session_runs(session).values() if stage is None or r["stage"] == stage]
     if sort == "val":
         recs.sort(key=lambda r: (_primary_val(r) is None, -(_primary_val(r) or 0)))
     elif sort == "recent":
@@ -547,29 +603,32 @@ def query(task: str | None = None, stage: str | None = None, top_k: int = 10, so
                      "primary": PRIMARY.get(r["task_type"]), "val": _primary_val(r), "val_tta": _primary_val(r, True),
                      "model": model, "lr": c["lr"], "epochs": c["epochs"], "batch_size": c["batch_size"],
                      "img_size": c["img_size"], "freeze": c["freeze_backbone"], "gpu_min": r.get("gpu_minutes"),
-                     "outcome": r.get("outcome"), "parent": r.get("parent_run_id"), "hypothesis": r["hypothesis"]})
+                     "outcome": r.get("outcome"), "parent": r.get("parent_run_id"), "hypothesis": r["hypothesis"],
+                     "launched_by": r.get("launched_by")})
     return rows
 
 
 # --------------------------------------------------------------------------- finalize
 
-def finalize(task: str, run_id: str, tta: bool) -> dict:
-    """The one test evaluation for the task (refused a second time). Returns the vault entry."""
+def finalize(session: Session, rationale: str, launched_by: str = "agent") -> dict:
+    """The one test evaluation for the task (refused a second time, machine-wide). Code picks the model: the
+    session's incumbent. Returns the vault entry; agent tools pass on only its hash."""
     from gotrain.engine.evaluate import final_test
 
     if is_sandbox():  # first check, before anything else: tool checks / tests never reach the test split
         raise PermissionError("finalize is disabled in a sandbox workspace (GOTRAIN_WORKSPACE)")
-    info(task)
+    if not (rationale or "").strip():
+        raise ValueError("rationale is required")
     sync()
-    rec = _get(run_id)
-    if rec["task"] != task:
-        raise ValueError(f"{run_id} is a {rec['task']} run, not {task}")
-    if rec["status"] != "done":
-        raise ValueError(f"{run_id} is {rec['status']}; only a run that finished training (status done) can be finalized")
+    rec = incumbent(session)
+    if rec is None:
+        raise ValueError("this session has no incumbent (no finished decision run): nothing to finalize")
     if not (_run_dir(rec) / "checkpoint.pt").exists():
-        raise FileNotFoundError(f"{run_id} has no checkpoint")
-    entry = final_test(str(_run_dir(rec)), tta=tta)  # refuses if the task already has a vault entry
-    _update(rec, stage="final", finalized_at=entry["timestamp"], test_entry_hash=entry["entry_hash"])
+        raise FileNotFoundError(f"{rec['run_id']} has no checkpoint")
+    tta = False  # Step 12: the TTA gate decides
+    entry = final_test(str(_run_dir(rec)), tta=tta)  # refuses if the task's test split was already opened
+    _update(rec, finalized_at=entry["timestamp"], test_entry_hash=entry["entry_hash"],
+            finalize_rationale=rationale.strip(), finalized_by=launched_by)
     return entry
 
 

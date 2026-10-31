@@ -51,3 +51,6 @@ Choose what makes GoTrain stand out, then plan it:
 - Critic agent (overfitting / leakage checks)
 - Production: S3 + model registry + model cards, MCP server for GoPilot
 - Dashboard / experiment tree for the presentation
+
+## Creative phase
+Continues in `docs/CREATIVE_PLAN.md` (Steps 5 amended, 6–14). Step 6 done 31 Oct (harness hardening).

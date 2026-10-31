@@ -212,3 +212,40 @@ Grouped by workflow step. ⭐ = creative layer; build after the basic loop runs.
 - SSL4EO on tasks missing S2 bands: config key `band_fill` (`norm_mean` default, `interp_b06`); derived `input_bands`
   (expected bands, source index per band, missing list) is stored in the resolved config. `list_backbones` says which
   bands get filled.
+
+## Step 6 changes (31 Oct, creative phase) — current state
+
+Names, fields and signatures are pinned in `docs/INTERFACES.md`. In short:
+
+- **Sessions** (`gotrain/session.py`): `python -m gotrain.run --task T --arm main|off|dev --budget B --phases ...`.
+  `WORKSPACE/sessions.jsonl` holds the header (code tree hash, prompt hash, playbook hash, model, versions, B,
+  R = B/10, P1 = 0.75 B, P2 = 0.25 B, scope), `phase_done` and `session_end` (input/output tokens). There is one
+  transcript per phase: `agent_logs/<session_id>.<phase>.jsonl` (+ `.md`). The early-finalize policy is gone;
+  the phase order is fixed (level1 → reflect → level2 → finalize).
+- **Run record additions:** `session_id`, `arm`, `launched_by` (`agent`|`harness`|`operator`), `run_cap_min`,
+  `charged_min` (launch to exit), `failure_reason`. `stage` is `screen`|`train`|`seed_repeat`|`level2`.
+  `final` is no longer written: finalize adds `finalized_at`, `test_entry_hash`, `finalize_rationale`.
+  **Rows without `session_id` never count** (budget, outcomes, incumbent).
+- **Tools are bound to the session** (`make_tools(session)` in each `gotrain/tools/*.py` module). No tool takes
+  a `task` argument. Every run-id tool refuses runs of another task or session, and `query_ledger` shows only the
+  session's runs. `list_tasks` was removed. `finalize(rationale)`: code finalizes the incumbent (Step 6 rule: best
+  finished decision run by val; Step 7 adds the noise gate), and the agent gets only the vault hash.
+- **Budget:** `get_budget` reports the pots. Each decision run is capped at R, and a screen at R/3 (at most two per
+  session). A launch is refused when its pot has less than one run left. `runs.set_budget` and `budget.json` are
+  gone.
+- **Machine-wide state** (`gotrain/state.py`, `$GOTRAIN_STATE_DIR`, default `~/.gotrain-state`):
+  - The GPU lock (flock) is inherited by the training subprocess. A held lock means refused, never waited on.
+  - The test registry `tested.jsonl` is seeded with INC-001 as `voided`. `final_test` appends `opened` before
+    reading test and `done` after the vault append.
+  - `python -m gotrain.state allowed <tasks>` is the write-free allow check, and `python -m gotrain.state holder`
+    shows who holds the lock.
+- **`final_test`** writes `<run dir>/test_stats.npz` (ids, groups, labels + probabilities, or per-image confusion
+  without the ignore class; under 1 MB). Its sha256 is stored in the vault entry as `test_stats_sha256`. No tool reads it.
+- **Context limits** (`gotrain/hooks.py`):
+  - Tool calls run one at a time (Strands 0.3.0 has no sequential executor, so each call takes a process-wide lock).
+  - Tool text is capped at 2,000 characters, except `list_backbones`, `read_playbook`, `compose_config`,
+    `mine_effects` and `query_ledger` (`top_k` ≤ 50, never cut mid-row).
+  - Images are downscaled to a long side of ≤ 1,024 px.
+- **Prompts** live in `gotrain/prompts/` (`system.md` + one section per phase). `tests/test_step6.py` includes the
+  hygiene test (no task ids, class names, sensor names, band ids, GSD values or decimals in prompts or tool specs).
+- `GOTRAIN_CACHE` overrides the data cache location, for a second checkout.
