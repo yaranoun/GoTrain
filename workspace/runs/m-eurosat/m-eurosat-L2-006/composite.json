@@ -1,0 +1,30 @@
+{
+ "task": "m-eurosat",
+ "mechanism": "ensemble",
+ "members": [
+  {
+   "run_id": "m-eurosat-0010",
+   "run_dir": "runs/m-eurosat/m-eurosat-0010",
+   "tta": false,
+   "checkpoint_sha256": "sha256:5b549dd24209384f0ae2d341fb3d9cf20409fa6f342a54d42ea5b5189bb33b9c"
+  },
+  {
+   "run_id": "m-eurosat-0008",
+   "run_dir": "runs/m-eurosat/m-eurosat-0008",
+   "tta": false,
+   "checkpoint_sha256": "sha256:127c311311e148137d289fe9ec42d682ed03b6467b8bb1fcc4cd47b5720a7254"
+  },
+  {
+   "run_id": "m-eurosat-0009",
+   "run_dir": "runs/m-eurosat/m-eurosat-0009",
+   "tta": false,
+   "checkpoint_sha256": "sha256:6c1a229e17bbc9ef14109d81005060b997d85c7b3e37ac9191e5689c7cc13456"
+  },
+  {
+   "run_id": "m-eurosat-0015",
+   "run_dir": "runs/m-eurosat/m-eurosat-0015",
+   "tta": false,
+   "checkpoint_sha256": "sha256:d34ec4b68a2e9a6fa62b71ae7f6f78ae441e62fdf0177e7d02d7ae9c83ddebd3"
+  }
+ ]
+}

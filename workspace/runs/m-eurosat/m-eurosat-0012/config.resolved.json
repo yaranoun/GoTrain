@@ -1,0 +1,23 @@
+{
+  "task": "m-eurosat",
+  "backbone": "resnet18",
+  "weights": "ssl4eo_moco",
+  "decoder": "unet",
+  "norm": "div10000",
+  "img_size": 224,
+  "augment": [
+    "d4"
+  ],
+  "optimizer": "adamw",
+  "lr": 0.0003,
+  "weight_decay": 0.05,
+  "batch_size": 64,
+  "epochs": 30,
+  "warmup_epochs": 1,
+  "label_smoothing": 0.1,
+  "freeze_backbone": false,
+  "train_fraction": 1.0,
+  "seed": 1,
+  "time_limit_min": 6.0,
+  "band_fill": null
+}

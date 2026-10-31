@@ -1,0 +1,121 @@
+2026-10-31T19:22:05Z chain start (pid 87338)
+2026-10-31T19:22:05Z start: build_cache m-eurosat
+all requested caches exist
+2026-10-31T19:22:07Z done: build_cache m-eurosat
+2026-10-31T19:22:07Z start: session m-eurosat main level1,reflect,level2,finalize --budget 60
+Session m-eurosat__main__chain · arm main · B 60.0 (R 6.0, P1 45.0, P2 15.0) · workspace /home/sagemaker-user/GoTrain/workspace
+[level1] transcript: /home/sagemaker-user/GoTrain/workspace/agent_logs/m-eurosat__main__chain.level1.jsonl
+
+Tool #1: profile_dataset
+
+Tool #2: list_backbones
+
+Tool #3: get_budget
+
+Tool #4: read_playbook
+
+Tool #5: save_profile_notes
+
+Tool #6: launch_training
+
+Tool #7: compose_config
+
+Tool #8: wait_run
+
+Tool #9: launch_training
+
+Tool #10: wait_run
+
+Tool #11: launch_training
+
+Tool #12: launch_training
+
+Tool #13: wait_run
+
+Tool #14: launch_training
+
+Tool #15: wait_run
+
+Tool #16: launch_training
+
+Tool #17: wait_run
+
+Tool #18: launch_training
+
+Tool #19: wait_run
+
+Tool #20: launch_training
+
+Tool #21: wait_run
+
+Tool #22: get_budget
+I stopped Level 1 because the pot has 4.2 min left and a decision run needs 6.
+
+No change beat the measured noise, so the incumbent is still the first run, m-eurosat-0006 (ResNet18, SSL4EO-MoCo weights, lr 1e-3), at 98.0% validation accuracy. The harness's seed repeat of that run scored 98.7%, so seed-to-seed noise is about 0.7 points.
+
+| Run | Change | Val accuracy | Outcome |
+|---|---|---|---|
+| 0006 | ResNet18, SSL4EO, lr 1e-3 (first run) | 98.0% | incumbent |
+| 0007 | seed repeat of 0006 | 98.7% | noise measurement |
+| 0008 | lr 3e-4 | 98.8% | within noise |
+| 0009 | ResNet50 (only 42 epochs fit in the cap) | 98.7% | within noise |
+| 0010 | lr 3e-4 plus label smoothing 0.1 | 98.9% (best score) | within noise |
+| 0011 | ImageNet ResNet18 at 64 px, with label smoothing | 97.5% | within noise, lower |
+| 0012 | seed repeat of 0010 | 98.6% | within noise |
+
+- **Best recipe:** ResNet18 with SSL4EO-MoCo weights, lr 3e-4 and label smoothing 0.1. It scored 98.9% and 98.6% over two seeds, but neither gain cleared the noise bar.
+- **Weights:** SSL4EO beat ImageNet by about 1 point, but that gap is also within noise.
+- **Not run:** I did not use either screen run or look at the confusion matrices.[level1] end: 22 tool calls, 41.8 min, tokens {'inputTokens': 97459, 'outputTokens': 3310, 'totalTokens': 180822} (transcript m-eurosat__main__chain.level1.md)
+[reflect] transcript: /home/sagemaker-user/GoTrain/workspace/agent_logs/m-eurosat__main__chain.reflect.jsonl
+
+Tool #1: get_budget
+
+Tool #2: query_ledger
+
+Tool #3: mine_effects
+
+Tool #4: read_playbook
+
+Tool #5: add_lesson
+
+Tool #6: add_lesson
+I wrote two lessons, both leads. I left out the effects below.
+
+**Lessons written**
+- **L001 (weights):** SSL4EO-MoCo resnet18 beat ImageNet resnet18 by about 1.4 points of val accuracy (z −1.64 for the ImageNet change). The ImageNet run also used img_size 64 instead of 224, so weights and resolution are confounded. I said so in the lesson.
+- **L002 (learning rate):** Lowering lr from 1e-3 to 3e-4 with SSL4EO resnet18 gained about 0.8 points (z +1.0). The seed repeat of the lr 1e-3 run scored 98.7 against 98.0, so seed noise is about as large as the effect. I marked it weak.
+
+**Effects left out**
+- **0011>0012 (weights, z +1.27):** It repeats the L001 comparison with a different seed, so it adds nothing new.
+- **Label smoothing 0→0.1 (z −0.26 and +0.14):** Too weak to write up. The two runs disagree in sign.
+- **resnet18→resnet50 (z −0.14):** Too weak to write up. It showed no gain, and fewer epochs fit in the cap.
+
+I made no knob requests.[reflect] end: 6 tool calls, 0.3 min, tokens {'inputTokens': 6759, 'outputTokens': 1177, 'totalTokens': 17323} (transcript m-eurosat__main__chain.reflect.md)
+[level2] TTA gate m-eurosat-0010: z +0.00 -> drop
+[level2] TTA gate m-eurosat-0008: z -1.45 -> drop
+[level2] TTA gate m-eurosat-0009: z +0.00 -> drop
+[level2] ensemble m-eurosat-L2-004: z +1.92 vs m-eurosat-0006 -> kept out
+[level2] trained slot m-eurosat-0015: done
+[level2] ensemble+slot m-eurosat-L2-006: z +2.49 vs m-eurosat-0006 -> promoted
+[finalize] transcript: /home/sagemaker-user/GoTrain/workspace/agent_logs/m-eurosat__main__chain.finalize.jsonl
+/opt/conda/lib/python3.12/site-packages/geobench/dataset.py:1243: UserWarning: m-eurosat in the published geo-bench-1.0 benchmark stores incorrect band names and wavelengths for most channels (the pixel data is unaffected), so selecting bands by name returns the wrong channel. See https://github.com/ServiceNow/geo-bench/issues/28 and the 'Known issues' section of the geo-bench README for the correct channel order.
+  warn(
+
+Tool #1: get_budget
+
+Tool #2: query_ledger
+
+Tool #3: finalize
+I finalized the dataset. The code tested the incumbent, the 4-member ensemble m-eurosat-L2-006, on the test split. I only see the vault hash: sha256:dfae022ff91b569528b29f55e3abafde495488890260aa8a0690c8fb283f8581.
+
+The ensemble scored 98.90% on validation. That ties the best single model, m-eurosat-0010, so I kept the ensemble as the more robust choice. The differences between the top candidates (98.70–98.90%) are within seed noise. The ensemble averages two ResNet18 runs (0010, 0008), one ResNet50 run (0009) and an extra ResNet18 seed (0015), all with SSL4EO MoCo weights.
+
+About 4.2 minutes of the Level 1 pot and 8.7 minutes of the Level 2 pot went unused.[finalize] end: 3 tool calls, 0.2 min, tokens {'inputTokens': 5905, 'outputTokens': 483, 'totalTokens': 10351} (transcript m-eurosat__main__chain.finalize.md)
+2026-10-31T20:11:34Z done: session m-eurosat main level1,reflect,level2,finalize --budget 60
+2026-10-31T20:11:34Z start: verify m-eurosat main
+transcript: ok (6 agent rows, 8 launches)
+ledger: ok (13 rows)
+noise: ok (6 decision runs, sigma_seed recorded)
+pot: ok (P1 used 40.81/45, P2 used 6.30/15, 0 screens)
+2026-10-31T20:11:37Z done: verify m-eurosat main
+2026-10-31T20:11:37Z start: commit m-eurosat level1 + reflect + level2 + finalize
