@@ -326,4 +326,5 @@ def test_val_and_test_stats_are_not_gitignored():
                  "experiments/playbook-ab/m-SA-crop-type/off/workspace/runs/m-SA-crop-type/r/val_stats.npz"):
         out = subprocess.run(["git", "check-ignore", "-q", path], cwd=REPO)
         assert out.returncode == 1, f"{path} is ignored"
-    assert subprocess.run(["git", "check-ignore", "-q", "workspace/cache/x.npy"], cwd=REPO).returncode == 0
+    assert subprocess.run(["git", "check-ignore", "-q", "workspace/runs/m-eurosat/r/x.npy"], cwd=REPO).returncode == 0
+    assert subprocess.run(["git", "check-ignore", "-q", "workspace/cache"], cwd=REPO).returncode == 0  # dir or symlink
