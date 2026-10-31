@@ -3,6 +3,7 @@ INTERFACES.md v2 §4 and §10).
 
 Usage:
   GOTRAIN_WORKSPACE=<workspace> python -m gotrain.verify --session <id> [--checks transcript,ledger,noise,pot]
+  GOTRAIN_WORKSPACE=<workspace> python -m gotrain.verify --full     # workspace-wide (Step 14), with or without --session
 
 Reads GOTRAIN_WORKSPACE only. Prints one line per check and exits 1 if any check fails, 2 if the session is not in
 this workspace (or its header names another workspace). Read-only: it never writes anything.
@@ -17,6 +18,11 @@ this workspace (or its header names another workspace). Read-only: it never writ
   before it, noise.delta and noise.sd_boot exactly (seed 0); noise.sigma_seed is null if the row finished before
   the sigma_seed record and equal to it otherwise; sigma, z, z_vs_incumbent and the outcome thresholds agree.
   The sigma_seed record itself equals |score(A') - score(A)|.
+--full (Step 14): the vault hash chain (one entry per task); model, member and test_stats.npz hashes against the
+vault; every lesson born before its dataset's test touch; the committed test-registry copy against the vault
+(incl. the voided INC-001 line); registry hashes against the vault; lesson evidence = finished agent runs of one
+session; the playbook only grew along run/chain since freeze-f1; no main commit after freeze-f1 touches workspace/.
+Git checks print "n/a" until freeze-f1 and run/chain exist.
 - pot: at each launch (created_at order) the row's pot (P1 for screen/train/seed_repeat, P2 for level2) minus the
   charged minutes of earlier rows in it covers the row's run cap; at most 2 screens; no P1 row after the first
   level2 row; charged_min <= run_cap_min + 0.25. Level 2 composites (no run cap) are only charged: the total P2
@@ -271,6 +277,183 @@ def check_pot(h: dict, rows: list[dict]) -> tuple[list[str], str]:
     return problems, f"P1 used {used['P1']:.2f}/{h['P1']:g}, P2 used {used['P2']:.2f}/{h['P2']:g}, {screens} screens"
 
 
+# --------------------------------------------------------------------------- full verify (workspace-wide, Step 14)
+
+FULL_CHECKS = ("vault_chain", "artifact_hashes", "lessons_predate_test", "test_registry_copy", "registry_hashes",
+               "lesson_evidence", "playbook_grew", "main_untouched")
+FREEZE_TAG, CHAIN_REFS, MAIN_REFS = "freeze-f1", ("run/chain", "origin/run/chain"), ("origin/main", "main")
+NA = "n/a"
+
+
+def _sha_file(path: Path) -> str:
+    import hashlib
+
+    h = hashlib.sha256()
+    with Path(path).open("rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return "sha256:" + h.hexdigest()
+
+
+def _git(*args: str) -> tuple[int, str]:
+    import subprocess
+
+    from gotrain import REPO
+
+    out = subprocess.run(["git", *args], cwd=REPO, capture_output=True, text=True)
+    return out.returncode, out.stdout
+
+
+def _ref(candidates) -> str | None:
+    return next((r for r in candidates if _git("rev-parse", "--verify", "-q", r)[0] == 0), None)
+
+
+def full_vault_chain(vault) -> tuple[list[str], str]:
+    import hashlib
+
+    problems, prev, seen = [], None, set()
+    for i, e in enumerate(vault):
+        body = {k: v for k, v in e.items() if k != "entry_hash"}
+        want = "sha256:" + hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()
+        if e.get("entry_hash") != want:
+            problems.append(f"entry {i} ({e['task']}): entry_hash does not recompute")
+        if e.get("prev_entry_hash") != prev:
+            problems.append(f"entry {i} ({e['task']}): prev_entry_hash breaks the chain")
+        if e["task"] in seen:
+            problems.append(f"{e['task']}: more than one vault entry")
+        seen.add(e["task"])
+        prev = e.get("entry_hash")
+    return problems, f"{len(vault)} entries"
+
+
+def full_artifact_hashes(vault) -> tuple[list[str], str]:
+    problems, rows = [], ledger.runs()
+    for e in vault:
+        rec = rows.get(e["run_id"])
+        if rec is None:
+            problems.append(f"{e['run_id']}: vault entry without a ledger row")
+            continue
+        d = WORKSPACE / rec["artifacts"]["dir"]
+        model = d / ("composite.json" if e.get("members") else "checkpoint.pt")
+        if not model.exists() or _sha_file(model) != e["checkpoint_sha256"]:
+            problems.append(f"{e['run_id']}: {model.name} missing or not the vault's {e['checkpoint_sha256'][:15]}…")
+        for m in e.get("members") or []:
+            mrec = rows.get(m["run_id"])
+            mp = WORKSPACE / mrec["artifacts"]["dir"] / "checkpoint.pt" if mrec else None
+            if mp is None or not mp.exists() or _sha_file(mp) != m["checkpoint_sha256"]:
+                problems.append(f"{e['run_id']}: member {m['run_id']} checkpoint missing or changed")
+        ts = d / "test_stats.npz"
+        if not ts.exists() or _sha_file(ts) != e.get("test_stats_sha256"):
+            problems.append(f"{e['run_id']}: test_stats.npz missing or not the vault's")
+    return problems, f"{len(vault)} models"
+
+
+def _lessons() -> dict:
+    out = {}
+    for L in ledger.read(ledger.PLAYBOOK):
+        out[L["lesson_id"]] = L
+    return out
+
+
+def full_lessons_predate_test(vault) -> tuple[list[str], str]:
+    by_task = {e["task"]: e for e in vault}
+    problems, checked = [], 0
+    for L in _lessons().values():
+        e = by_task.get(L["born_on"])
+        if e is None:
+            continue
+        checked += 1
+        if not L.get("born_at") or L["born_at"] >= e["timestamp"]:
+            problems.append(f"{L['lesson_id']} born {L.get('born_at')} on {L['born_on']}, test touched {e['timestamp']}")
+    return problems, f"{checked} lessons on finalized datasets"
+
+
+def full_test_registry_copy(vault) -> tuple[list[str], str]:
+    path = WORKSPACE / "test_registry.jsonl"
+    if not path.exists():
+        return [], f"{NA} (no committed copy at {path.name})"
+    lines = ledger.read(path)
+    done = {l["vault_entry_hash"] for l in lines if l.get("event") == "done"}
+    problems = [f"{e['task']}: vault entry {e['entry_hash'][:15]}… has no 'done' line" for e in vault
+                if e["entry_hash"] not in done]
+    problems += [f"'done' line {h[:15]}… has no vault entry" for h in done - {e["entry_hash"] for e in vault}]
+    if not any(l.get("event") == "voided" and l.get("task") == "m-eurosat" for l in lines):
+        problems.append("the voided m-eurosat line (INC-001) is missing")
+    return problems, f"{len(lines)} lines, {len(done)} done"
+
+
+def full_registry_hashes(vault) -> tuple[list[str], str]:
+    from gotrain import registry
+
+    by_run = {e["run_id"]: e for e in vault}
+    problems, n = [], 0
+    for m in registry.entries().values():
+        e = by_run.get(m["run_id"])
+        if e is None:
+            continue
+        n += 1
+        if m["checkpoint_sha256"] != e["checkpoint_sha256"]:
+            problems.append(f"{m['model_id']}: checkpoint hash differs from the vault")
+        if [x["checkpoint_sha256"] for x in m.get("members") or []] != [x["checkpoint_sha256"] for x in e.get("members") or []]:
+            problems.append(f"{m['model_id']}: member hashes differ from the vault")
+        if (m.get("test") or {}).get("vault_entry_hash") not in (None, e["entry_hash"]):
+            problems.append(f"{m['model_id']}: test score not from this vault entry")
+    return problems, f"{n} finalized registry entries"
+
+
+def full_lesson_evidence(vault) -> tuple[list[str], str]:
+    rows, problems = ledger.runs(), []
+    lessons = _lessons()
+    for L in lessons.values():
+        ev = L.get("evidence") or {}
+        for rid in ev.get("runs", []):
+            r = rows.get(rid)
+            if r is None or r.get("status") != "done" or r.get("launched_by") != "agent" or \
+                    r.get("session_id") != ev.get("session_id"):
+                problems.append(f"{L['lesson_id']}: evidence run {rid} is not a finished agent run of {ev.get('session_id')}")
+    return problems, f"{len(lessons)} lessons"
+
+
+def full_playbook_grew(vault) -> tuple[list[str], str]:
+    chain = _ref(CHAIN_REFS)
+    if _ref((FREEZE_TAG,)) is None or chain is None:
+        return [], f"{NA} (needs tag {FREEZE_TAG} and branch run/chain)"
+    rel = "workspace/playbook.jsonl"
+    problems = []
+    if _git("cat-file", "-e", f"{FREEZE_TAG}:{rel}")[0] == 0:
+        problems.append(f"{rel} already exists at {FREEZE_TAG}")
+    _, log = _git("log", "--first-parent", "--reverse", "--format=%H", f"{FREEZE_TAG}..{chain}", "--", rel)
+    prev = ""
+    for sha in log.split():
+        code, text = _git("show", f"{sha}:{rel}")
+        text = text if code == 0 else ""
+        if not text.startswith(prev):
+            problems.append(f"{sha[:10]}: {rel} is not an extension of the previous version")
+        prev = text
+    return problems, f"{len(log.split())} versions along {chain}"
+
+
+def full_main_untouched(vault) -> tuple[list[str], str]:
+    main = _ref(MAIN_REFS)
+    if _ref((FREEZE_TAG,)) is None or main is None:
+        return [], f"{NA} (needs tag {FREEZE_TAG})"
+    _, log = _git("log", "--format=%h %s", f"{FREEZE_TAG}..{main}", "--", "workspace/")
+    bad = [l for l in log.splitlines() if l.strip()]
+    return [f"{main} commit touches workspace/: {l}" for l in bad], f"{main} since {FREEZE_TAG}"
+
+
+def verify_full() -> dict:
+    vault = ledger.read(ledger.VAULT)
+    out = {}
+    for name in FULL_CHECKS:
+        try:
+            problems, summary = globals()[f"full_{name}"](vault)
+        except Exception as e:  # a check that cannot run is a failed check
+            problems, summary = [f"check crashed: {type(e).__name__}: {e}"], ""
+        out[name] = {"ok": not problems, "problems": problems, "summary": summary}
+    return out
+
+
 # --------------------------------------------------------------------------- entry points
 
 def header(session_id: str) -> dict:
@@ -302,15 +485,22 @@ def verify(session_id: str, checks=CHECKS) -> dict:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--session", required=True)
+    ap.add_argument("--session", help="one session's checks (transcript, ledger, noise, pot)")
     ap.add_argument("--checks", default=",".join(CHECKS))
+    ap.add_argument("--full", action="store_true", help="workspace-wide checks: " + ", ".join(FULL_CHECKS))
     args = ap.parse_args(argv)
+    if not args.session and not args.full:
+        ap.error("give --session <id>, --full, or both")
     checks = [c.strip() for c in args.checks.split(",") if c.strip()]
-    try:
-        res = verify(args.session, checks)
-    except NotFound as e:
-        print(str(e.code), file=sys.stderr)
-        return 2
+    res = {}
+    if args.session:
+        try:
+            res.update(verify(args.session, checks))
+        except NotFound as e:
+            print(str(e.code), file=sys.stderr)
+            return 2
+    if args.full:
+        res.update(verify_full())
     for name, r in res.items():
         if r["ok"]:
             print(f"{name}: ok ({r['summary']})")
