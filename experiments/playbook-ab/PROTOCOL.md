@@ -1,6 +1,6 @@
 # With/without-playbook experiment: protocol
 
-**Status: draft.** The values marked `TBD at F1` are filled in by the build agent at the freeze (F1), and this
+**Status: frozen at F1 (31 Oct, tag `freeze-f1`).** The values marked `TBD at F1` are filled in by the build agent at the freeze (F1), and this
 file is committed before dataset #1 runs. After that commit nothing here changes. `analyze.py` reads B, R and its
 own hash from the parameter lines below, and refuses to run while any of them is `TBD`.
 
@@ -8,9 +8,9 @@ Plan of record: `docs/CREATIVE_PLAN.md` §5 (this file restates it; the plan win
 
 ## Parameters (read by analyze.py)
 
-- B = TBD at F1 (GPU minutes per dataset, chosen once by the §7.3 ladder)
-- R = TBD at F1 (= B / 10, the cap of one decision run; a screen gets R / 3)
-- analyze.py = TBD at F1 (sha256 of `experiments/playbook-ab/analyze.py` at the freeze)
+- B = 60 (GPU minutes per dataset, chosen once by the §7.3 ladder at F1: T = 11:00, F1 ≈ 21:45, measured O = 1.08 h)
+- R = 6 (= B / 10, the cap of one decision run; a screen gets R / 3)
+- analyze.py = sha256:1adb4c81b665e5d0c8759684e8a43a31ced465ff81df7e78ead4f9a7b383564f
 
 Pots: P1 = 0.75 · B (Level 1), P2 = 0.25 · B (Level 2 + finalize). The same B, R, P1 and P2 on every dataset and in
 both arms.

@@ -776,6 +776,15 @@ OUTCOME_COLOURS = {"first": "#3FA7D6", "kept": "#2BB673", "within_noise": "#8A9A
                    "failed": "#7a1f1f", "killed": "#7a1f1f", "screen": "#F2A93B", "seed_repeat": "#B98AD6"}
 
 
+def model_label(r: dict) -> str:
+    """'backbone/weights[+decoder]' for a training run; 'ensemble of a, b' / 'TTA of a' for a Level 2 composite."""
+    c = r.get("config") or {}
+    if c.get("backbone"):
+        return f"{c['backbone']}/{c['weights']}" + (f"+{c['decoder']}" if r.get("task_type") == "segmentation" else "")
+    parents = [p["run_id"] + (" (TTA)" if p.get("tta") else "") for p in r.get("parents") or []]
+    return f"{r.get('mechanism') or 'composite'} of {', '.join(parents)}" if parents else (r.get("mechanism") or "?")
+
+
 def tree(session: Session) -> dict:
     """The session's run tree: indented text and a PNG (nodes coloured by outcome, the incumbent ringed)."""
     sync()
@@ -790,10 +799,11 @@ def tree(session: Session) -> dict:
 
     def walk(parent, depth):
         for r in kids.get(parent, []):
-            c = r["config"]
+            c = r.get("config") or {}
             pos[r["run_id"]] = (depth, len(pos))
-            lines.append(f"{'  ' * depth}- {r['run_id']} [{r['stage']}, {r['outcome'] or r['status']}] "
-                         f"{c['backbone']}/{c['weights']} img {c['img_size'] or 'native'} lr {c['lr']}: "
+            desc = (f"{model_label(r)} img {c.get('img_size') or 'native'} lr {c.get('lr')}" if c
+                    else model_label(r))
+            lines.append(f"{'  ' * depth}- {r['run_id']} [{r['stage']}, {r['outcome'] or r['status']}] {desc}: "
                          f"val {fmt(primary, _primary_val(r))}"
                          + (f", z {r['z_vs_incumbent']:+.2f}" if r.get("z_vs_incumbent") is not None else "")
                          + (f", changed {r['knob_diff']}" if r.get("knob_diff") else "")
@@ -834,12 +844,12 @@ def query(session: Session, stage: str | None = None, top_k: int = 10, sort: str
         raise ValueError("sort must be 'val' or 'recent'")
     rows = []
     for r in recs[:top_k]:
-        c = r["config"]
-        model = f"{c['backbone']}/{c['weights']}" + (f"+{c['decoder']}" if r["task_type"] == "segmentation" else "")
+        c = r.get("config") or {}
+        model = model_label(r)
         rows.append({"run_id": r["run_id"], "task": r["task"], "stage": r["stage"], "status": r["status"],
                      "primary": PRIMARY.get(r["task_type"]), "val": _primary_val(r), "val_tta": _primary_val(r, True),
-                     "model": model, "lr": c["lr"], "epochs": c["epochs"], "batch_size": c["batch_size"],
-                     "img_size": c["img_size"], "freeze": c["freeze_backbone"], "gpu_min": r.get("gpu_minutes"),
+                     "model": model, "lr": c.get("lr"), "epochs": c.get("epochs"), "batch_size": c.get("batch_size"),
+                     "img_size": c.get("img_size"), "freeze": c.get("freeze_backbone"), "gpu_min": r.get("gpu_minutes"),
                      "outcome": r.get("outcome"), "parent": r.get("parent_run_id"), "hypothesis": r["hypothesis"],
                      "launched_by": r.get("launched_by")})
     return rows

@@ -92,9 +92,10 @@ def make_tools(session: Session) -> dict:
         lines = []
         for r in rows:
             p = r["primary"]
+            settings = (f" lr {r['lr']} bs {r['batch_size']} img {r['img_size'] or 'native'}"
+                        f"{' frozen' if r['freeze'] else ''}") if r["lr"] is not None else ""
             lines.append(f"- {r['run_id']} [{r['stage']}, {r['status']}{', harness' if r['launched_by'] == 'harness' else ''}] "
-                         f"{r['model']} lr {r['lr']} bs {r['batch_size']} img {r['img_size'] or 'native'}"
-                         f"{' frozen' if r['freeze'] else ''}: val {runs.fmt(p, r['val'])}"
+                         f"{r['model']}{settings}: val {runs.fmt(p, r['val'])}"
                          + (f" (TTA {runs.fmt(p, r['val_tta'])})" if r["val_tta"] is not None else "")
                          + f", {r['gpu_min']} min, {r['outcome']}"
                          + (f", parent {r['parent']}" if r["parent"] else "")
