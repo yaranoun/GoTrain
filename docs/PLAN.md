@@ -38,6 +38,10 @@ Commit + push after every step (results included).
 
 ## Step 5 — Baselines (30 min)
 - `gotrain/baselines.json` with GEO-Bench paper scores per task; tools report "you vs best baseline".
+- **Before comparing m-cashew-plant:** our mIoU excludes class 0 ("no data", `IGNORE_INDEX`) from the loss, the
+  metric and predictions. Check how GEO-Bench computed theirs (all 7 classes? an ignore index?) and compare like
+  with like (recompute ours their way if needed).
+- **m-eurosat:** report its test score together with INC-001 (CLAUDE.md, `workspace/vault_incidents.jsonl`).
 
 ## STOP — creative phase (needs Aya's input)
 Choose what makes GoTrain stand out, then plan it:

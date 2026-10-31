@@ -2,16 +2,18 @@
 
 import timm
 
+from gotrain.engine.tasks import S2_CANONICAL
+
 # What the agent will see from list_backbones(). "norm" is the input normalization the weights expect.
 ZOO = {
     "resnet18/none": {"in_chans": "any", "norm": "zscore", "img_size": 64, "params_m": 11},
     "resnet18/imagenet": {"in_chans": "any", "norm": "zscore", "img_size": 64, "params_m": 11},
     "resnet50/imagenet": {"in_chans": "any", "norm": "zscore", "img_size": 64, "params_m": 23},
     "convnext_tiny/imagenet": {"in_chans": "any", "norm": "zscore", "img_size": 64, "params_m": 28},
-    "resnet18/ssl4eo_moco": {"in_chans": 13, "norm": "div10000", "img_size": 224, "params_m": 11,
-                             "notes": "Sentinel-2 self-supervised; needs all 13 bands in canonical order"},
-    "resnet50/ssl4eo_moco": {"in_chans": 13, "norm": "div10000", "img_size": 224, "params_m": 23,
-                             "notes": "Sentinel-2 self-supervised; needs all 13 bands in canonical order"},
+    "resnet18/ssl4eo_moco": {"in_chans": 13, "bands": S2_CANONICAL, "norm": "div10000", "img_size": 224,
+                             "params_m": 11, "notes": "Sentinel-2 L1C self-supervised (SSL4EO-S12 MoCo)"},
+    "resnet50/ssl4eo_moco": {"in_chans": 13, "bands": S2_CANONICAL, "norm": "div10000", "img_size": 224,
+                             "params_m": 23, "notes": "Sentinel-2 L1C self-supervised (SSL4EO-S12 MoCo)"},
 }
 
 # Segmentation: the backbone is the encoder of a decoder from segmentation_models_pytorch.
@@ -20,10 +22,10 @@ SEG_ZOO = {
     "resnet18/imagenet": {"in_chans": "any", "norm": "zscore", "img_size": None, "params_m": 14},
     "resnet34/imagenet": {"in_chans": "any", "norm": "zscore", "img_size": None, "params_m": 24},
     "resnet50/imagenet": {"in_chans": "any", "norm": "zscore", "img_size": None, "params_m": 32},
-    "resnet18/ssl4eo_moco": {"in_chans": 13, "norm": "div10000", "img_size": None, "params_m": 14,
-                             "notes": "Sentinel-2 self-supervised encoder; needs all 13 bands in canonical order"},
-    "resnet50/ssl4eo_moco": {"in_chans": 13, "norm": "div10000", "img_size": None, "params_m": 32,
-                             "notes": "Sentinel-2 self-supervised encoder; needs all 13 bands in canonical order"},
+    "resnet18/ssl4eo_moco": {"in_chans": 13, "bands": S2_CANONICAL, "norm": "div10000", "img_size": None,
+                             "params_m": 14, "notes": "Sentinel-2 L1C self-supervised encoder (SSL4EO-S12 MoCo)"},
+    "resnet50/ssl4eo_moco": {"in_chans": 13, "bands": S2_CANONICAL, "norm": "div10000", "img_size": None,
+                             "params_m": 32, "notes": "Sentinel-2 L1C self-supervised encoder (SSL4EO-S12 MoCo)"},
 }
 DECODERS = {"unet": "Unet", "fpn": "FPN", "deeplabv3plus": "DeepLabV3Plus"}
 
@@ -38,6 +40,21 @@ def zoo_entry(task_type: str, backbone: str, weights: str) -> dict:
     if key not in zoo:
         raise ValueError(f"Unknown backbone/weights '{key}' for {task_type}. Known: {sorted(zoo)}")
     return zoo[key]
+
+
+def band_plan(task_type: str, backbone: str, weights: str, channel_names: list[str] | None) -> dict | None:
+    """For weights pretrained on a fixed band list (SSL4EO: the 13 S2 bands): where each expected band comes
+    from in the task's channels, and which are missing (filled in train.prepare). None = use channels as they are."""
+    expected = zoo_entry(task_type, backbone, weights).get("bands")
+    if not expected or (channel_names is not None and list(channel_names) == list(expected)):
+        return None
+    if channel_names is None:
+        raise ValueError(f"{backbone}/{weights} needs named Sentinel-2 bands; this task's band names are unknown")
+    other = [b for b in channel_names if b not in expected]
+    if other:
+        raise ValueError(f"{backbone}/{weights} needs Sentinel-2 bands; this task has other channels {other}")
+    source = [channel_names.index(b) if b in channel_names else -1 for b in expected]
+    return {"bands": list(expected), "source": source, "missing": [b for b, s in zip(expected, source) if s < 0]}
 
 
 def build_model(backbone: str, weights: str, in_chans: int, n_classes: int,

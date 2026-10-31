@@ -22,8 +22,8 @@ from gotrain import WORKSPACE
 from gotrain.engine import segmentation as seg
 from gotrain.engine.augment import d4
 from gotrain.engine.data import load_split, normalize
-from gotrain.engine.models import build_model, encoder_params, zoo_entry
-from gotrain.engine.tasks import ignore_index, info
+from gotrain.engine.models import band_plan, build_model, encoder_params, zoo_entry
+from gotrain.engine.tasks import CHANNELS, ignore_index, info
 
 SUPPORTED = ("classification", "segmentation")
 PRIMARY = {"classification": "accuracy", "segmentation": "miou"}
@@ -46,7 +46,13 @@ DEFAULTS = {
     "train_fraction": 1.0,   # <1.0 for fast screening runs
     "seed": 0,
     "time_limit_min": None,  # stop after the epoch that crosses this (set by launch_training from the budget)
+    # Weights pretrained on all 13 S2 bands (SSL4EO) on a task that lacks some: how to fill the missing ones.
+    # "norm_mean": the weights' normalization mean, i.e. 0 after normalization (same as zeroing those first-conv
+    # input channels). "interp_b06": B06 interpolated from B05/B07 by wavelength, other missing bands as norm_mean.
+    "band_fill": None,
 }
+BAND_FILLS = ("norm_mean", "interp_b06")
+S2_WAVELENGTH_NM = {"B05": 704.1, "B06": 740.5, "B07": 782.8}
 
 
 # Per task type overrides of DEFAULTS (bigger images -> smaller batches; dense loss converges faster).
@@ -61,7 +67,42 @@ def resolve_config(config: dict, task: str) -> dict:
     zoo = zoo_entry(task_type, cfg["backbone"], cfg["weights"])
     cfg["norm"] = cfg["norm"] or zoo["norm"]
     cfg["img_size"] = cfg["img_size"] or zoo["img_size"]
+
+    plan = band_plan(task_type, cfg["backbone"], cfg["weights"], CHANNELS.get(task, {}).get("names"))
+    if plan is None:
+        if cfg["band_fill"] is not None:
+            raise ValueError(f"band_fill only applies when the weights need bands {task} lacks; "
+                             f"{cfg['backbone']}/{cfg['weights']} uses its channels as they are")
+    else:
+        cfg["band_fill"] = cfg["band_fill"] or "norm_mean"
+        if cfg["band_fill"] not in BAND_FILLS:
+            raise ValueError(f"band_fill must be one of {BAND_FILLS}")
+        if cfg["band_fill"] == "interp_b06":
+            if "B06" not in plan["missing"] or {"B05", "B07"} & set(plan["missing"]):
+                raise ValueError(f"interp_b06 needs B06 missing and B05/B07 present; {task} misses {plan['missing']}")
+            if cfg["norm"] != "div10000":
+                raise ValueError("interp_b06 needs norm='div10000' (interpolation of per-band z-scores is not valid)")
+        cfg["input_bands"] = plan  # derived, recorded with the config (not settable)
     return cfg
+
+
+def model_in_chans(cfg: dict, n_task_bands: int) -> int:
+    plan = cfg.get("input_bands")
+    return len(plan["source"]) if plan else n_task_bands
+
+
+def expand_bands(x: torch.Tensor, plan: dict, fill: str) -> torch.Tensor:
+    """(N, task bands, H, W), already normalized -> (N, expected bands, H, W). Missing bands are 0, the
+    normalization mean, so they contribute nothing through the first conv; interp_b06 rebuilds B06 from B05/B07."""
+    src = plan["source"]
+    present = [i for i, s in enumerate(src) if s >= 0]
+    out = x.new_zeros((x.shape[0], len(src), *x.shape[2:]))
+    out[:, present] = x[:, [src[i] for i in present]]
+    if fill == "interp_b06":
+        b, wl = plan["bands"], S2_WAVELENGTH_NM
+        t = (wl["B06"] - wl["B05"]) / (wl["B07"] - wl["B05"])
+        out[:, b.index("B06")] = (1 - t) * out[:, b.index("B05")] + t * out[:, b.index("B07")]
+    return out
 
 
 def new_run_dir(task: str, config: dict) -> Path:
@@ -80,6 +121,8 @@ def new_run_dir(task: str, config: dict) -> Path:
 
 def prepare(x: torch.Tensor, cfg: dict, mean: torch.Tensor, std: torch.Tensor) -> torch.Tensor:
     x = normalize(x, cfg["norm"], mean, std)
+    if cfg.get("input_bands"):
+        x = expand_bands(x, cfg["input_bands"], cfg["band_fill"])
     if cfg["img_size"] and x.shape[-1] != cfg["img_size"]:  # None = keep native size (segmentation)
         x = F.interpolate(x, size=cfg["img_size"], mode="bilinear", align_corners=False)
     return x
@@ -126,7 +169,7 @@ def train(run_dir: Path) -> dict:
     mean, std = torch.from_numpy(tr["mean"]).to(device), torch.from_numpy(tr["std"]).to(device)
     n_classes, ign = tr["n_classes"], ignore_index(task)
 
-    model = build_model(cfg["backbone"], cfg["weights"], x_tr.shape[1], n_classes,
+    model = build_model(cfg["backbone"], cfg["weights"], model_in_chans(cfg, x_tr.shape[1]), n_classes,
                         task_type=task_type, decoder=cfg["decoder"]).to(device)
     if cfg["freeze_backbone"]:
         for p in encoder_params(model, task_type):

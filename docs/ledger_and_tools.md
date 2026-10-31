@@ -209,3 +209,6 @@ Grouped by workflow step. ⭐ = creative layer; build after the basic loop runs.
   agent tool), each run gets `time_limit_min` = remaining budget; `finalize` only on `done` runs.
 - Sandbox: `GOTRAIN_WORKSPACE` redirects runs/ledger/vault/logs; `finalize` and `final_test` refuse there.
 - `workspace/vault_incidents.jsonl`: voided vault entries, kept verbatim with the reason (INC-001).
+- SSL4EO on tasks missing S2 bands: config key `band_fill` (`norm_mean` default, `interp_b06`); derived `input_bands`
+  (expected bands, source index per band, missing list) is stored in the resolved config. `list_backbones` says which
+  bands get filled.

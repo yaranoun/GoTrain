@@ -29,8 +29,8 @@ import matplotlib.pyplot as plt
 
 from gotrain import REPO, WORKSPACE, is_sandbox, ledger
 from gotrain.engine.data import load_stats
-from gotrain.engine.models import DECODERS, zoo_for
-from gotrain.engine.tasks import TASKS, info
+from gotrain.engine.models import DECODERS, band_plan, zoo_for
+from gotrain.engine.tasks import CHANNELS, TASKS, info
 from gotrain.engine.train import DEFAULTS, PRIMARY, SUPPORTED, new_run_dir, resolve_config
 
 LOG_BASE = WORKSPACE.parent  # repo root normally; the sandbox folder in a sandbox
@@ -52,7 +52,8 @@ NUMERIC = {  # key: (type, min, max)
     "epochs": (int, 1, 300), "warmup_epochs": (int, 0, 50), "label_smoothing": (float, 0.0, 0.5),
     "train_fraction": (float, 0.01, 1.0), "seed": (int, 0, 2**31 - 1), "time_limit_min": (float, 0.5, 1440.0),
 }
-CHOICES = {"optimizer": {"adamw", "sgd"}, "norm": {None, "zscore", "div10000"}, "decoder": set(DECODERS)}
+CHOICES = {"optimizer": {"adamw", "sgd"}, "norm": {None, "zscore", "div10000"}, "decoder": set(DECODERS),
+           "band_fill": {None, "norm_mean", "interp_b06"}}
 AUGMENTS = {"d4"}
 
 CONFIG_HELP = {
@@ -68,6 +69,9 @@ CONFIG_HELP = {
     "train_fraction": "(0, 1]; < 1 for cheap screening runs",
     "seed": "int",
     "time_limit_min": "optional; capped at the remaining budget",
+    "band_fill": ("only for 13-band SSL4EO weights on a task missing S2 bands: norm_mean (default; missing bands "
+                  "at the normalization mean = 0, same as zeroing those first-conv inputs) | interp_b06 (B06 "
+                  "interpolated from B05/B07, others norm_mean)"),
 }
 
 
@@ -78,14 +82,23 @@ def n_bands(task: str) -> int:
 def list_backbones(task: str) -> list[dict]:
     """Model zoo for the task's type, with whether each entry fits the task's bands."""
     task_type, bands = info(task)["type"], n_bands(task)
+    names = CHANNELS.get(task, {}).get("names")
     rows = []
     for key, e in zoo_for(task_type).items():
         backbone, weights = key.split("/")
-        ok = e["in_chans"] == "any" or e["in_chans"] == bands
+        why_not, fills = None, []
+        if e.get("bands"):
+            try:
+                plan = band_plan(task_type, backbone, weights, names)
+                fills = plan["missing"] if plan else []
+            except ValueError as err:
+                why_not = str(err)
+        elif e["in_chans"] != "any" and e["in_chans"] != bands:
+            why_not = f"needs exactly {e['in_chans']} bands, {task} has {bands}"
         rows.append({
-            "backbone": backbone, "weights": weights, "usable": ok,
-            "why_not": None if ok else f"needs exactly {e['in_chans']} bands, {task} has {bands}",
-            "norm": e["norm"], "img_size": e["img_size"], "params_m": e["params_m"], "notes": e.get("notes", ""),
+            "backbone": backbone, "weights": weights, "usable": why_not is None, "why_not": why_not,
+            "fills_missing_bands": fills, "norm": e["norm"], "img_size": e["img_size"], "params_m": e["params_m"],
+            "notes": e.get("notes", ""),
         })
     return rows
 

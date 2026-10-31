@@ -25,6 +25,12 @@ def list_backbones(task: str) -> dict:
     lines = [f"Models for {task} ({task_type}, {runs.n_bands(task)} bands):"]
     for r in rows:
         mark = "usable" if r["usable"] else f"NOT usable: {r['why_not']}"
+        if r["fills_missing_bands"]:
+            mark += (f" (fills missing {', '.join(r['fills_missing_bands'])} at the normalization mean, i.e. 0 = "
+                     f"zeroed first-conv inputs; set band_fill='interp_b06' to rebuild B06 from B05/B07)"
+                     if "B06" in r["fills_missing_bands"] else
+                     f" (fills missing {', '.join(r['fills_missing_bands'])} at the normalization mean, i.e. 0 = "
+                     f"zeroed first-conv inputs)")
         size = r["img_size"] if r["img_size"] else "native"
         lines.append(f"- backbone={r['backbone']} weights={r['weights']}: {mark}; norm {r['norm']}, img_size {size}, "
                      f"{r['params_m']}M params{'; ' + r['notes'] if r['notes'] else ''}")

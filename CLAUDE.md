@@ -53,7 +53,7 @@ python -m gotrain.engine.evaluate workspace/runs/m-eurosat/m-eurosat-0002 --tta
 - `m-brick-kiln` on-disk order: B01 B02 B03 B04 B05 B07 B8A B08 B11 B12 TCI_R TCI_G TCI_B (no B06/B09/B10; TCI = 8-bit RGB copy, dropped) → 10 bands.
 - `m-cashew-plant`: S2 without B10 + cloud probability (dropped) → 12 bands; its "B8A" is an exact copy of B08. Class 0 = "no data" (unlabelled, image still has pixels) → `IGNORE_INDEX`: excluded from loss/mIoU, never predicted.
 - `m-cashew-plant` = 54 train / 16 val locations × 25 dates each (val locations never in train): tiny effective dataset; multi-date stacking is an option.
-- SSL4EO weights need all 13 bands: brick-kiln (10) and cashew (12) are refused until missing bands are filled in.
+- SSL4EO weights (13 S2 bands, torchgeo transform = divide by 10000, normalization mean 0) work on brick-kiln and cashew: missing bands (brick-kiln B06/B09/B10, cashew B10) are filled at the normalization mean, i.e. 0 after normalization, which is exactly equivalent to zeroing those first-conv input channels (`train.expand_bands`, per batch). `band_fill: interp_b06` rebuilds B06 from B05/B07 (brick-kiln). The band plan is stored as `input_bands` in the resolved config.
 - Evaluating while another run trains: fine (eval reads only train mean/std via `load_stats`), but two trainings at once can exhaust the 15 GB RAM.
 - GEO-Bench calls the val split `valid`; we use `val` (mapped in `data.py`).
 - SSL4EO weights (torchgeo) expect 13 canonical S2 bands, input /10000, 224px.

@@ -21,7 +21,7 @@ from gotrain.engine.data import _load_arrays, load_split, load_stats
 from gotrain.engine.models import build_model
 from gotrain.engine.tasks import band_roles, display_scale, ignore_index, info
 from gotrain.engine.viz import composite, views
-from gotrain.engine.train import predict, prepare, resolve_config
+from gotrain.engine.train import model_in_chans, predict, prepare, resolve_config
 
 
 def _load_run(run_dir: Path):
@@ -33,7 +33,8 @@ def _load_run(run_dir: Path):
 
 
 def _load_model(run_dir, task, cfg, device, split_data):
-    model = build_model(cfg["backbone"], cfg["weights"], split_data["x"].shape[1], split_data["n_classes"],
+    model = build_model(cfg["backbone"], cfg["weights"], model_in_chans(cfg, split_data["x"].shape[1]),
+                        split_data["n_classes"],
                         task_type=info(task)["type"], decoder=cfg["decoder"])
     model.load_state_dict(torch.load(run_dir / "checkpoint.pt", map_location=device, weights_only=True))
     model.to(device)
