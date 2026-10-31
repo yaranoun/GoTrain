@@ -33,6 +33,16 @@ BRICK_KILN_DISK_ORDER = ["B01", "B02", "B03", "B04", "B05", "B07", "B8A", "B08",
 # copy of B08 in the source data (identical pixels, 10 m texture), kept as is.
 CASHEW_DISK_ORDER = ["B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B8A", "B09", "B11", "B12", "CLD"]
 
+# m-SA-crop-type: Sentinel-2 without B10, plus the converter's cloud layer (CLM). The stored names are right, checked
+# on the HF v1.0 train split on 31 Oct (scripts/step9_inspect.py, 48 samples): B01/B09 show 6x6 blocks (60 m),
+# B05/B06/B07/B8A/B11/B12 2x2 blocks (20 m), B02/B03/B04/B08 native 10 m texture; correlations match S2 (B07~B8A 0.99,
+# B06~B07 0.98, B11~B12 0.97, B02~B03 0.96); the converter (crop_type_south_africa.py) lists the same order.
+# VALUES ARE 8-BIT: 0-255 (int16 on disk, saturating at 255), about reflectance x 255, not reflectance x 1e4 like
+# the other Sentinel-2 tasks (GEO-Bench's band_stats agree; true colour is natural at 76.5 = 0.3 reflectance).
+# Cloud layer checked by hand: 0 on every pixel (the converter keeps each field tile's 5 least-cloudy dates), so it is
+# dropped; a few images still show clouds. About 0.4-4% of pixels are 0 in every band (rotated-tile borders).
+SA_CROP_DISK_ORDER = ["B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B8A", "B09", "B11", "B12", "CLM"]
+
 
 def _select(disk_order: list[str], names: list[str]) -> dict:
     return {"permutation": [disk_order.index(b) for b in names], "names": names}
@@ -46,6 +56,10 @@ CHANNELS = {
     # Cloud probability dropped: 0 on >99% of pixels.
     "m-cashew-plant": _select(CASHEW_DISK_ORDER, CASHEW_DISK_ORDER[:12]),
     "m-pv4ger-seg": _select(["R", "G", "B"], ["R", "G", "B"]),
+    # Cloud layer dropped: 0 everywhere.
+    "m-SA-crop-type": _select(SA_CROP_DISK_ORDER, SA_CROP_DISK_ORDER[:12]),
+    # Aerial 8-bit RGB (0.1 m), stored Red, Green, Blue; checked by a natural true-colour picture (31 Oct).
+    "m-nz-cattle": _select(["R", "G", "B"], ["R", "G", "B"]),
 }
 
 # Which channel plays which role, for composites and indices (true colour, false colour, NDVI).
@@ -55,6 +69,8 @@ BAND_ROLES = {
     "m-brick-kiln": S2_ROLES,
     "m-cashew-plant": S2_ROLES,
     "m-pv4ger-seg": {"red": "R", "green": "G", "blue": "B"},
+    "m-SA-crop-type": S2_ROLES,
+    "m-nz-cattle": {"red": "R", "green": "G", "blue": "B"},
 }
 
 GSD_M = {
@@ -72,7 +88,9 @@ def band_roles(task: str) -> dict:
 # A fixed scale keeps the true R:G:B ratios; the per-image percentile stretch subtracts an
 # offset that turns dark scenes (forest, water) blue from atmospheric haze in B02.
 # Tasks not listed fall back to a per-image percentile stretch. 8-bit aerial RGB: 255.
-DISPLAY_SCALE = {"m-eurosat": 3000.0, "m-brick-kiln": 3000.0, "m-cashew-plant": 3000.0, "m-pv4ger-seg": 255.0}
+# m-SA-crop-type is 8-bit (see SA_CROP_DISK_ORDER): 76.5 is the same 0.3 reflectance as 3000 elsewhere.
+DISPLAY_SCALE = {"m-eurosat": 3000.0, "m-brick-kiln": 3000.0, "m-cashew-plant": 3000.0, "m-pv4ger-seg": 255.0,
+                 "m-SA-crop-type": 76.5, "m-nz-cattle": 255.0}
 
 
 def display_scale(task: str) -> float | None:
@@ -88,17 +106,27 @@ CLASS_NAMES = {
     # m-cashew-plant ships without class names; these are the LABELS of geo-bench's converter.
     "m-cashew-plant": ["no data", "well-managed plantation", "poorly-managed plantation", "non-plantation",
                        "residential", "background", "uncertain"],
+    # m-SA-crop-type ships without class names; these are crop_labels of geo-bench's converter (labels 0-9).
+    "m-SA-crop-type": ["no data", "Lucerne/Medics", "Planted pastures (perennial)", "Fallow", "Wine grapes", "Weeds",
+                       "Small grain grazing", "Wheat", "Canola", "Rooibos"],
+    # m-nz-cattle: the task specs' names. Masks are radius-6 px boxes around point labels (nz_cattle_detection.py).
+    "m-nz-cattle": ["no cattle", "cattle"],
 }
 
 # Segmentation label excluded from loss, metrics and predictions. m-cashew-plant class 0 = "no data":
 # pixels the label map doesn't cover (98% in fully unlabelled border rows/cols) while the image does,
 # so it can't be learned from the imagery.
-IGNORE_INDEX = {"m-cashew-plant": 0}
+# m-SA-crop-type class 0 = "No Data" (converter): unlabelled pixels, ignored the same way.
+IGNORE_INDEX = {"m-cashew-plant": 0, "m-SA-crop-type": 0}
 
 
 # Bootstrap groups for the noise gate and test intervals (CREATIVE_PLAN.md §4.2): samples that are not independent.
 # m-cashew-plant has 25 dates per location; samples with an identical label mask are one location (val: 16 groups).
-GROUP_BY = {"m-cashew-plant": "label_hash"}
+# m-SA-crop-type has 5 dates per field tile (names ..._<tile>_<k>, identical label masks, checked on train): one
+# location per label mask (val: 250 groups of 1000 images).
+# m-nz-cattle has no rule yet: about half its images have a "_shifted" twin of the same coordinates (train 204 pairs,
+# val 6 pairs, and 50 val locations also appear in train); grouping them needs a name-based rule in data.group_keys.
+GROUP_BY = {"m-cashew-plant": "label_hash", "m-SA-crop-type": "label_hash"}
 
 
 def ignore_index(task: str) -> int | None:
