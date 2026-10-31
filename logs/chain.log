@@ -466,3 +466,11 @@ noise: ok (6 decision runs, sigma_seed recorded)
 pot: ok (P1 used 40.59/45, P2 used 7.15/15, 0 screens)
 2026-10-31T22:52:30Z done: verify m-cashew-plant main
 2026-10-31T22:52:30Z start: commit m-cashew-plant level1 + reflect + level2 + finalize
+2026-10-31T22:52:31Z committed: chain: m-cashew-plant level1 + reflect + level2 + finalize
+2026-10-31T22:52:31Z committed: chain: m-cashew-plant level1 + reflect + level2 + finalize
+2026-10-31T22:52:33Z done: commit m-cashew-plant level1 + reflect + level2 + finalize
+2026-10-31T22:52:33Z start: snapshot
+a39fdb49ac46dc2390bef54678f836c0e5691e39101c10d90585c90ff89107eb  experiments/playbook-ab/playbook-snapshot.jsonl
+a39fdb49ac46dc2390bef54678f836c0e5691e39101c10d90585c90ff89107eb  experiments/playbook-ab/playbook-snapshot.jsonl
+2026-10-31T22:52:33Z done: snapshot
+2026-10-31T22:52:33Z start: commit playbook snapshot after #4
