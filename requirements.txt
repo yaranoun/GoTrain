@@ -1,7 +1,8 @@
 geobench
 h5py
 huggingface_hub
-strands-agents
+strands-agents==0.3.0
+mcp>=1.23,<2  # FastMCP (mcp.server.fastmcp); strands-agents 0.3.0 requires mcp<2
 strands-agents-tools
 torch
 torchvision

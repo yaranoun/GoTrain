@@ -475,3 +475,35 @@ JSON report go to `.sandbox/step9/`). Gate tests without data: `tests/test_step9
   | nz-cattle, resnet34/imagenet U-Net (default), bs 16 | 32 (full epoch) | 16.9 s (0.528 s/step) | 1.82 GB | 3.98 GB |
 
   Gate: peak RAM < 12 GB ✓.
+
+## Step 13 (31 Oct, reduced form first) — store, model registry, model cards, MCP server, GoPilot client
+
+- **Store** (`gotrain/store.py`): `LocalStore` (folder, `$GOTRAIN_STORE_ROOT`, default `~/.gotrain-store`) and
+  `S3Store` behind one interface; `GOTRAIN_STORE=local | s3://<bucket>[/<prefix>]`. Keys: `datasets/<benchmark>/<task>.zip`,
+  `models/<task>/<run_id>/{checkpoint.pt|composite.json, config.json, val_stats.npz, test_stats.npz, model_card.md}`,
+  `registry/registry.jsonl`, `playbook/playbook.jsonl`. Every put/get is logged with its sha256 to
+  `WORKSPACE/store_log.jsonl`; `fetch-dataset` checks the zip against the last push. CLI: `python -m gotrain.store
+  doctor | push-dataset <task> | fetch-dataset <task> | push-models [<task>] | ls [<prefix>]`.
+  `doctor` = identity + put/get/delete round trip. On 31 Oct the role `gotrain-hackathon-role` can list
+  `s3://gotrain-575331248402-eu-central-1` but has **no `s3:PutObject`** (AccessDenied), so the S3 backend waits
+  for an IAM grant (Put/Get/DeleteObject on that bucket); `LocalStore` works.
+- **Model registry** (`gotrain/registry.py`, `WORKSPACE/registry.jsonl`, append-only, last line per `model_id` wins):
+  `model_id` = `<task>:v<N>`, `run_id`, `kind` (checkpoint | composite), `checkpoint_sha256`, `members` (composites:
+  run ids, member checkpoint hashes, TTA flags), `derived_from`, `config`, `val` (from val_stats.npz), `test`
+  (**from the vault entry only**: score, TTA, `vault_entry_hash`, `test_stats_sha256`), `tag` (candidate |
+  production | archived; promoting archives the previous production model). For a finalized model the checkpoint
+  (or composite.json) and member hashes must equal the vault entry's, or registration is refused. `python -m
+  gotrain.registry sync` registers every vault entry as its task's production model.
+- **Model cards** (`gotrain/model_card.py`, `WORKSPACE/model_cards/<task>__v<N>.md` and `<task>.md` for production):
+  written entirely by code: task (scope, bands, classes, ignore class, data notes), model (config or members,
+  hashes, lineage), scores (val; test from the vault with a 95% grouped bootstrap interval, 10,000 resamples, seed 0,
+  computed from test_stats.npz only after its sha256 and its score match the vault entry; GEO-Bench reference with
+  its protocol flag), how it was found (session header, GPU minutes, opening, lesson tests, lessons born), and
+  disclosed incidents (INC-001 on m-eurosat).
+- **MCP server** (`python -m gotrain.mcp_server`, FastMCP over stdio, `mcp>=1.23,<2`): read-only tools
+  `list_tasks`, `list_models`, `get_model_card`, `get_playbook`, `query_runs`. It never calls finalize, launch,
+  add_lesson or any write.
+- **GoPilot client** (`examples/gopilot_client.py`): Strands `MCPClient` over stdio; lists the tools and fetches a
+  model card, or `--ask "<question>"` runs a Strands agent (Bedrock) with the tools.
+- Tests: `tests/test_step13.py` (synthetic finalized models and a Level 2 ensemble; the vault rows it adds are
+  removed again at teardown).
