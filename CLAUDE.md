@@ -20,9 +20,11 @@ gotrain/engine/   plain training engine (no agent code)
   tasks.py        task registry, channel fixes, band roles, GSD
   download.py     one task from HF (recursix/geo-bench-1.0)
   data.py         split -> cached .npz -> tensors (train/val only)
-  models.py       ZOO: backbone/weights -> norm + img_size
-  train.py        config-driven classification training (DEFAULTS)
-  evaluate.py     val metrics, confusion + failure plots, final_test + vault
+  models.py       ZOO (classification) + SEG_ZOO (U-Net/FPN/DeepLabV3+ encoders): backbone/weights -> norm + img_size
+  train.py        config-driven training, classification + segmentation (DEFAULTS, TYPE_DEFAULTS)
+  segmentation.py CE+Dice loss, mIoU, mask prediction with D4 TTA (inverse-transformed)
+  augment.py      D4 transforms + inverse
+  evaluate.py     val metrics + plots (confusion; failures / worst-IoU overlays), final_test + vault
   profile.py      dataset profile: stats + true/false colour/NDVI grids
   viz.py          composites, NDVI
 gotrain/tools/    Strands @tool wrappers (explore.py done)
@@ -37,6 +39,7 @@ workspace/        runs/, profiles/, ledger.jsonl, vault.jsonl, playbook.jsonl (c
 python -m gotrain.engine.download m-eurosat
 python -m gotrain.engine.profile m-eurosat
 python -m gotrain.engine.train --task m-eurosat --set backbone=resnet50 weights=ssl4eo_moco batch_size=32
+python -m gotrain.engine.train --task m-pv4ger-seg --set backbone=resnet34 weights=imagenet epochs=20
 python -m gotrain.engine.evaluate workspace/runs/m-eurosat/m-eurosat-0002 --tta
 ```
 
@@ -51,6 +54,7 @@ profile → recall playbook → plan candidates → screen cheaply → train bes
 
 ## Status (31 Oct)
 - **Tasks:** classification `m-eurosat`, `m-brick-kiln`; segmentation `m-pv4ger-seg`, `m-cashew-plant`.
-- Engine done for classification; `profile_dataset` tool done.
-- m-eurosat val: ResNet18 ImageNet 64px **96.4%** (0.5 min); ResNet50 SSL4EO 224px **98.3%** (4.8 min).
+- Engine done for classification + segmentation; `profile_dataset` tool done.
+- m-eurosat val: ResNet18 ImageNet 64px **96.4%** (0.5 min); ResNet50 SSL4EO 224px **98.3%** (4.8 min). TTA gives no gain here (98.2%).
+- m-pv4ger-seg val: U-Net ResNet34 ImageNet 320px, 20 ep **0.955 mIoU**, **0.959 with TTA** (11.7 min).
 - Next: see `docs/PLAN.md` (Step 0 onward). Stop before the creative phase and ask Aya.

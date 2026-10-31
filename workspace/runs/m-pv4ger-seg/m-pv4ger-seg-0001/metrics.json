@@ -1,0 +1,13 @@
+{
+  "primary": "miou",
+  "val": {
+    "miou": 0.9548506907000889,
+    "per_class_iou": [
+      0.9815,
+      0.9282
+    ]
+  },
+  "best_epoch": 20,
+  "train_loss_final": 0.060034680334641974,
+  "gpu_minutes": 11.67
+}

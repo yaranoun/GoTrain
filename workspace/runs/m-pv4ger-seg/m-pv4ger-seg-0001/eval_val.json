@@ -1,0 +1,18 @@
+{
+  "split": "val",
+  "tta": false,
+  "miou": 0.9548506907000889,
+  "per_class_iou": [
+    0.9815,
+    0.9282
+  ],
+  "pixel_accuracy": 0.9850947483715881,
+  "classes": [
+    "no solar pv",
+    "solar pv"
+  ],
+  "plots": [
+    "workspace/runs/m-pv4ger-seg/m-pv4ger-seg-0001/plots/confusion.png",
+    "workspace/runs/m-pv4ger-seg/m-pv4ger-seg-0001/plots/failures.png"
+  ]
+}

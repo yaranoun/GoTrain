@@ -1,0 +1,6 @@
+{
+  "task": "m-pv4ger-seg",
+  "backbone": "resnet34",
+  "weights": "imagenet",
+  "epochs": 20
+}

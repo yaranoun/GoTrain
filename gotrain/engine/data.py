@@ -29,30 +29,41 @@ def _build_cache(task: str, split: str) -> Path:
 
     ds = GeobenchDataset(dataset_dir(task), split=GEOBENCH_SPLIT[split], band_names=None)
     task_type = info(task)["type"]
-    xs, ys = [], []
+    specs = ds.task_specs
+    n_classes = specs.label_type.n_classes
+
+    # Fill preallocated arrays (no list + np.stack copy): segmentation splits are several GB.
+    x0, _ = ds[0].pack_to_3d(band_names=ds.band_names)  # (H, W, C), on-disk channel order
+    xs = np.empty((len(ds), x0.shape[2], x0.shape[0], x0.shape[1]), dtype=np.float32)
+    if task_type == "segmentation":
+        # Masks as uint8 (8x smaller than int64); cast per batch when training.
+        ys = np.empty((len(ds), x0.shape[0], x0.shape[1]), dtype=np.uint8 if n_classes < 256 else np.int64)
+    else:
+        ys = [None] * len(ds)
     for i in range(len(ds)):
         sample = ds[i]
-        x, _ = sample.pack_to_3d(band_names=ds.band_names)  # (H, W, C), on-disk channel order
-        xs.append(np.asarray(x, dtype=np.float32).transpose(2, 0, 1))
+        x, _ = sample.pack_to_3d(band_names=ds.band_names)
+        xs[i] = np.asarray(x, dtype=np.float32).transpose(2, 0, 1)
         if task_type == "segmentation":
-            ys.append(np.asarray(sample.label.data, dtype=np.int64).squeeze())
+            ys[i] = np.asarray(sample.label.data).squeeze()
         else:
-            ys.append(np.asarray(sample.label))
+            ys[i] = np.asarray(sample.label)
+    if task_type != "segmentation":
+        ys = np.stack(ys)
 
     means, stds = ds.normalization_stats()  # per on-disk channel
-    specs = ds.task_specs
     classes = specs.label_type.class_names if hasattr(specs.label_type, "class_names") else None
 
     path = _cache_path(task, split)
     path.parent.mkdir(parents=True, exist_ok=True)
     np.savez(
         path,
-        x=np.stack(xs),
-        y=np.stack(ys),
+        x=xs,
+        y=ys,
         mean=np.asarray(means, dtype=np.float32),
         std=np.asarray(stds, dtype=np.float32),
-        n_classes=specs.label_type.n_classes,
-        classes=np.asarray(classes if classes else [str(c) for c in range(specs.label_type.n_classes)]),
+        n_classes=n_classes,
+        classes=np.asarray(classes if classes else [str(c) for c in range(n_classes)]),
     )
     return path
 

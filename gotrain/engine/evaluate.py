@@ -16,29 +16,44 @@ import numpy as np
 import torch
 from sklearn.metrics import confusion_matrix, f1_score
 
+from gotrain.engine import segmentation as seg
 from gotrain.engine.data import _load_arrays, load_split
 from gotrain.engine.models import build_model
-from gotrain.engine.tasks import band_roles, display_scale
+from gotrain.engine.tasks import band_roles, display_scale, info
 from gotrain.engine.viz import composite, views
-from gotrain.engine.train import predict, resolve_config
+from gotrain.engine.train import predict, prepare, resolve_config
 
 
 def _load_run(run_dir: Path):
     raw = json.loads((run_dir / "config.json").read_text())
     task = raw.pop("task")
-    cfg = resolve_config(raw)
+    cfg = resolve_config(raw, task)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     return task, cfg, device
 
 
-def _model_and_probs(run_dir, task, cfg, device, split_data, tta):
-    model = build_model(cfg["backbone"], cfg["weights"], split_data["x"].shape[1], split_data["n_classes"])
+def _load_model(run_dir, task, cfg, device, split_data):
+    model = build_model(cfg["backbone"], cfg["weights"], split_data["x"].shape[1], split_data["n_classes"],
+                        task_type=info(task)["type"], decoder=cfg["decoder"])
     model.load_state_dict(torch.load(run_dir / "checkpoint.pt", map_location=device, weights_only=True))
     model.to(device)
     train_stats = load_split(task, "train")  # normalization always uses train stats
     mean = torch.from_numpy(train_stats["mean"]).to(device)
     std = torch.from_numpy(train_stats["std"]).to(device)
+    return model, mean, std
+
+
+def _model_and_probs(run_dir, task, cfg, device, split_data, tta):
+    """Classification: class probabilities (N, n_classes)."""
+    model, mean, std = _load_model(run_dir, task, cfg, device, split_data)
     return predict(model, torch.from_numpy(split_data["x"]), cfg, mean, std, device, tta=tta)
+
+
+def _model_and_masks(run_dir, task, cfg, device, split_data, tta):
+    """Segmentation: predicted class maps (N, H, W) uint8."""
+    model, mean, std = _load_model(run_dir, task, cfg, device, split_data)
+    return seg.predict(model, torch.from_numpy(split_data["x"]), lambda x: prepare(x, cfg, mean, std),
+                       device, tta=tta, batch_size=cfg["batch_size"])
 
 
 def _scores(y, pred, n_classes) -> dict:
@@ -55,15 +70,23 @@ def evaluate(run_dir: str, split: str = "val", tta: bool = False) -> dict:
     run_dir = Path(run_dir)
     task, cfg, device = _load_run(run_dir)
     data = load_split(task, split)
-    probs = _model_and_probs(run_dir, task, cfg, device, data, tta)
-    pred, y = probs.argmax(1), data["y"].astype(np.int64)
-    scores, cm = _scores(y, pred, data["n_classes"])
-
     plots = run_dir / "plots"
     plots.mkdir(exist_ok=True)
     suffix = "_tta" if tta else ""
-    plot_confusion(cm, data["classes"], plots / f"confusion{suffix}.png")
-    plot_failures(data, probs, task, plots / f"failures{suffix}.png")
+
+    if info(task)["type"] == "segmentation":
+        pred = _model_and_masks(run_dir, task, cfg, device, data, tta)
+        cm = seg.confusion(pred, data["y"], data["n_classes"])
+        scores = seg.iou_scores(cm)
+        pct = np.round(100 * cm / np.maximum(cm.sum(1, keepdims=True), 1)).astype(int)
+        plot_confusion(pct, data["classes"], plots / f"confusion{suffix}.png", title="pixels, % of true class")
+        plot_seg_failures(data, pred, task, plots / f"failures{suffix}.png")
+    else:
+        probs = _model_and_probs(run_dir, task, cfg, device, data, tta)
+        pred, y = probs.argmax(1), data["y"].astype(np.int64)
+        scores, cm = _scores(y, pred, data["n_classes"])
+        plot_confusion(cm, data["classes"], plots / f"confusion{suffix}.png")
+        plot_failures(data, probs, task, plots / f"failures{suffix}.png")
 
     result = {"split": split, "tta": tta, **scores, "classes": data["classes"],
               "plots": [str(plots / f"confusion{suffix}.png"), str(plots / f"failures{suffix}.png")]}
@@ -82,8 +105,14 @@ def final_test(run_dir: str, tta: bool) -> dict:
         raise PermissionError(f"Test split for {task} was already used. One test evaluation per task.")
 
     data = _load_arrays(task, "test")
-    probs = _model_and_probs(run_dir, task, cfg, device, data, tta)
-    scores, _ = _scores(data["y"].astype(np.int64), probs.argmax(1), data["n_classes"])
+    if info(task)["type"] == "segmentation":
+        pred = _model_and_masks(run_dir, task, cfg, device, data, tta)
+        scores = seg.iou_scores(seg.confusion(pred, data["y"], data["n_classes"]))
+        test_metrics = {k: scores[k] for k in ("miou", "per_class_iou", "pixel_accuracy")}
+    else:
+        probs = _model_and_probs(run_dir, task, cfg, device, data, tta)
+        scores, _ = _scores(data["y"].astype(np.int64), probs.argmax(1), data["n_classes"])
+        test_metrics = {"accuracy": scores["accuracy"], "macro_f1": scores["macro_f1"]}
 
     entry = {
         "task": task,
@@ -91,7 +120,7 @@ def final_test(run_dir: str, tta: bool) -> dict:
         "config_hash": _sha256(json.dumps({"task": task, **cfg}, sort_keys=True).encode()),
         "checkpoint_sha256": _sha256((run_dir / "checkpoint.pt").read_bytes()),
         "tta": tta,
-        "test_metrics": {"accuracy": scores["accuracy"], "macro_f1": scores["macro_f1"]},
+        "test_metrics": test_metrics,
         "timestamp": now(),
         "prev_entry_hash": vault[-1]["entry_hash"] if vault else None,
     }
@@ -104,8 +133,10 @@ def _sha256(b: bytes) -> str:
     return "sha256:" + hashlib.sha256(b).hexdigest()
 
 
-def plot_confusion(cm, classes, path) -> None:
+def plot_confusion(cm, classes, path, title=None) -> None:
     fig, ax = plt.subplots(figsize=(7, 6))
+    if title:
+        ax.set_title(title, fontsize=9)
     ax.imshow(cm, cmap="Blues")
     ax.set_xticks(range(len(classes)), classes, rotation=60, ha="right", fontsize=8)
     ax.set_yticks(range(len(classes)), classes, fontsize=8)
@@ -141,6 +172,37 @@ def plot_failures(data, probs, task, path, n=16) -> None:
                      fontsize=7)
     fig.tight_layout()
     fig.savefig(path, dpi=120)
+    plt.close(fig)
+
+
+def plot_seg_failures(data, pred, task, path, n=8) -> None:
+    """Val images with the lowest IoU: image + true mask | image + predicted mask | errors in red."""
+    n_classes, y = data["n_classes"], data["y"]
+    ious = seg.per_image_iou(pred, y, n_classes)
+    worst = np.argsort(ious)[:n]
+    names = list(data["channel_names"])
+    rgb = next(iter(views(names, band_roles(task)).values()))
+    mask_kw = dict(cmap="tab10", alpha=0.5, vmin=0, vmax=max(n_classes - 1, 1), interpolation="nearest")
+
+    per_row = 2
+    rows = int(np.ceil(len(worst) / per_row))
+    fig, axes = plt.subplots(rows, 3 * per_row, figsize=(3 * per_row * 2.1, rows * 2.3), squeeze=False)
+    for ax in axes.flat:
+        ax.axis("off")
+    for j, i in enumerate(worst):
+        r, c = divmod(j, per_row)
+        a_true, a_pred, a_err = axes[r, 3 * c:3 * c + 3]
+        img = composite(data["x"][i], names, rgb, scale=display_scale(task))
+        for ax, mask, title in ((a_true, y[i], f"truth (IoU {ious[i]:.2f})"), (a_pred, pred[i], "pred")):
+            ax.imshow(img)
+            ax.imshow(np.ma.masked_equal(mask, 0), **mask_kw)  # class 0 transparent
+            ax.set_title(title, fontsize=7)
+        a_err.imshow(img.mean(-1), cmap="gray", vmin=0, vmax=1)
+        a_err.imshow(np.ma.masked_equal((pred[i] != y[i]).astype(np.uint8), 0), cmap="autumn", alpha=0.7,
+                     interpolation="nearest")
+        a_err.set_title("errors", fontsize=7)
+    fig.tight_layout()
+    fig.savefig(path, dpi=110)
     plt.close(fig)
 
 
