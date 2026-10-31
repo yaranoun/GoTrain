@@ -1,9 +1,12 @@
 geobench
+h5py
+huggingface_hub
 strands-agents
 strands-agents-tools
 torch
 torchvision
 timm
+torchgeo
 numpy
 pandas
 matplotlib
