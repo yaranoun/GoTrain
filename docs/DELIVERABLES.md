@@ -14,7 +14,7 @@ Status as of 31 Oct, 23:00 Beirut. ✅ done · ▶ running / in progress · ⏳ 
 | 8 | **Integrity and traceability**: `verify --full`, `trace_a_score`, INC-001 disclosure | test scores + logs | ✅ code; passes live on m-eurosat. ⏳ final run on all 5 | `gotrain/verify.py`, `examples/trace_a_score.py` | second session |
 | 9 | **Report + dashboard**: results table with intervals, trees, lesson-flow graph, A/B curve, Sentinel audit | all | ✅ code; rehearsed on live data. ⏳ final render | `gotrain/report.py` → `report/` | build agent |
 | 10 | **README**: pitch, quickstart, results, trace a score, plug into GoPilot | repo | ✅ draft. ⏳ results block auto-filled (`report --readme`) | `README.md` | second session |
-| 11 | **Pitch: 3–4 min total** (6-slide deck + 78.5 s upbeat video) | presentation | ✅ draft (~3:15). ⏳ fill `[RESULT]` placeholders and re-render with real numbers | `~/GoTrain-pitch/` (`*-v2-fixed.pptx`, `*-upbeat-fixed.mp4`) | build agent; **you: listen once** |
+| 11 | **Pitch: 3–4 min total** | presentation | ▶ the video is replaced by Aya's new ~90 s animated Remotion video, made outside SageMaker (decided 31 Oct, 23:46Z); the old slide-deck video is not re-rendered. The deck (v3 order: production → MCP → L3 → L2 → L1 → evidence) gets its `[RESULT]` placeholders filled from the report after the chain | `~/GoTrain-pitch/` (`build/deck_v3.js`, `build/fill_results.py`); video: Aya | Aya (video); build agent (deck fill + final numbers for Aya) |
 | 12 | **Submission**: merge `run/chain` into `main`, tag `submission`, push | — | ⏳ | GitHub `yaranoun/GoTrain` | build agent |
 
 ## Timeline (Beirut)
@@ -26,4 +26,4 @@ Status as of 31 Oct, 23:00 Beirut. ✅ done · ▶ running / in progress · ⏳ 
 ## Needs you
 1. **IAM:** grant `s3:PutObject` / `GetObject` / `DeleteObject` on `gotrain-575331248402-eu-central-1` to `gotrain-hackathon-role` (S3 extra point).
 2. **Presentation:** confirm the slot time and who presents; the total is 3–4 minutes.
-3. **Video:** play the upbeat video once (voice and music were checked by measurement only).
+3. **Video:** Aya's Remotion video replaces the old one. The build agent provides the final numbers (`report/results.md`, the A/B line) after the chain.
