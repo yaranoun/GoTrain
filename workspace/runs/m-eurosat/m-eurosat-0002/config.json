@@ -1,0 +1,6 @@
+{
+  "task": "m-eurosat",
+  "backbone": "resnet50",
+  "weights": "ssl4eo_moco",
+  "batch_size": 32
+}

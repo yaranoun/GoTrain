@@ -1,0 +1,5 @@
+{
+  "task": "m-eurosat",
+  "weights": "imagenet",
+  "epochs": 30
+}
