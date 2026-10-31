@@ -24,8 +24,8 @@ PROMPTS = Path(__file__).resolve().parent / "prompts"
 PHASE_TOOLS = {
     "level1": ["profile_dataset", "save_profile_notes", "list_backbones", "get_budget", "launch_training",
                "check_run", "wait_run", "kill_run", "evaluate_run", "record_diagnosis", "compare_runs",
-               "query_ledger", "read_playbook", "compose_config", "request_knob"],
-    "reflect": ["get_budget", "query_ledger", "compare_runs", "check_run", "read_playbook", "mine_effects",
+               "query_ledger", "show_tree", "read_playbook", "compose_config", "request_knob"],
+    "reflect": ["get_budget", "query_ledger", "show_tree", "compare_runs", "check_run", "read_playbook", "mine_effects",
                 "add_lesson", "request_knob"],
     "level2": ["get_budget", "query_ledger", "check_run", "record_diagnosis"],
     "finalize": ["get_budget", "query_ledger", "finalize"],

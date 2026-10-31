@@ -45,7 +45,8 @@ gotrain/run.py    session driver: --arm main|off|dev, --phases level1,reflect,le
                   one transcript per phase (agent_logs/<session_id>.<phase>.jsonl + .md), limits, resume
 docs/             CREATIVE_PLAN.md (approved plan, Steps 6+), INTERFACES.md (contract), SECOND_SESSION.md,
                   ledger_and_tools.md (record formats + tool list), PLAN.md (Steps 0-5)
-workspace/        runs/, profiles/, ledger.jsonl, vault.jsonl, vault_incidents.jsonl, budget.json, playbook.jsonl (cache/ gitignored)
+workspace/        runs/, profiles/, ledger.jsonl, sessions.jsonl, vault.jsonl, vault_incidents.jsonl, playbook.jsonl (cache/ gitignored)
+scripts/          chain.sh (resumable GPU queue, Step 11), gate_step7.py
 ```
 
 ## Commands
@@ -68,7 +69,9 @@ python -m pytest -q tests/                                  # gates (CPU, synthe
 - `m-cashew-plant`: S2 without B10 + cloud probability (dropped) → 12 bands; its "B8A" is an exact copy of B08. Class 0 = "no data" (unlabelled, image still has pixels) → `IGNORE_INDEX`: excluded from loss/mIoU, never predicted.
 - `m-cashew-plant` = 54 train / 16 val locations × 25 dates each (val locations never in train): tiny effective dataset; multi-date stacking is an option.
 - SSL4EO weights (13 S2 bands, torchgeo transform = divide by 10000, normalization mean 0) work on brick-kiln and cashew: missing bands (brick-kiln B06/B09/B10, cashew B10) are filled at the normalization mean, i.e. 0 after normalization, which is exactly equivalent to zeroing those first-conv input channels (`train.expand_bands`, per batch). `band_fill: interp_b06` rebuilds B06 from B05/B07 (brick-kiln). The band plan is stored as `input_bands` in the resolved config.
-- Evaluating while another run trains: fine (eval reads only train mean/std via `load_stats`), but two trainings at once can exhaust the 15 GB RAM.
+- Evaluating while another run trains: fine (eval reads only train mean/std via `load_stats`); two trainings at once are refused machine-wide (GPU lock) and a running session holds a lease that refuses every other GPU job.
+- Caches are built only by a GPU-lock holder (`python -m gotrain.engine.data build <task>` or a training subprocess); `load_stats` never builds. Changing `CHANNELS`/`GROUP_BY` for a task makes its cache stale (`StaleCache`): rebuild it.
+- `load_split` returns memmaps in narrow dtypes: use `data.batch(x, idx)` / `data.to_float(...)`, never `np.asarray` on a whole split.
 - GEO-Bench calls the val split `valid`; we use `val` (mapped in `data.py`).
 - SSL4EO weights (torchgeo) expect 13 canonical S2 bands, input /10000, 224px.
 - Strands tools can return images: `{"status": "success", "content": [{"text": ...}, {"image": {"format": "png", "source": {"bytes": ...}}}]}`.
@@ -89,4 +92,5 @@ profile → read playbook → compose first config → Level 1 (pot P1, fixed ru
 - m-brick-kiln val: ResNet18 ImageNet 64px, 30 ep **98.9%** acc (2.3 min); TTA 98.6% (no gain).
 - m-cashew-plant val (class 0 ignored): U-Net ResNet34 ImageNet 12 bands, 20 ep **0.738 mIoU**, **0.778 with TTA** (5.2 min); still improving at ep 20.
 - **Creative phase (31 Oct evening):** plan approved (`docs/CREATIVE_PLAN.md`); deadline T = 11:00 Beirut on 1 Nov; a second coding session builds Steps 5, 8, 9, analyze.py and session verify (`docs/SECOND_SESSION.md`) against `docs/INTERFACES.md`. Cut: data-state detector, dropping old images, unknown-scope wildcard. Pitch: 3–4 min total (slides + upbeat video).
-- **Step 6 done:** sessions + arms + phases, tools bound to the session, machine-wide GPU lock and test registry, code-chosen finalize returning only the vault hash, `test_stats.npz`, output caps, prompts in files with a hygiene test. Next: Step 7 (fixed run budget, noise gate, cache v2, Sentinel kill).
+- **Step 6 done:** sessions + arms + phases, tools bound to the session, machine-wide GPU lock and test registry, code-chosen finalize returning only the vault hash, `test_stats.npz`, output caps, prompts in files with a hygiene test.
+- **Step 7 done:** fixed run cap R with time-annealed LR and val cadence, `val_stats.npz` (= the run's val score), noise gate (grouped paired bootstrap + A/A′ seed σ, z ≥ 2 to keep), harness-launched A′, tree moves + one-knob-group rule, `show_tree`, cache v2 (memmap, narrow dtypes, ids/groups; `python -m gotrain.engine.data build <task>`), Sentinel (heartbeat, non-finite stop, hang kill), session lease. Contract v2 in `docs/INTERFACES.md`. Next: merge the second session's Step 8, then Step 10 (smoke test, freeze).

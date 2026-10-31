@@ -76,7 +76,8 @@ def predict(model, x_all, prepare, device, tta=False, batch_size=16, ignore_inde
     model.eval()
     out = []
     for i in range(0, len(x_all), batch_size):
-        xb = prepare(x_all[i:i + batch_size].to(device))
+        chunk = x_all[i:i + batch_size]
+        xb = prepare((chunk if torch.is_tensor(chunk) else torch.from_numpy(np.asarray(chunk, np.float32))).to(device))
         hw = tuple(x_all.shape[-2:])
         with torch.autocast(device.type, enabled=device.type == "cuda"):
             if tta:

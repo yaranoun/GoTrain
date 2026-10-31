@@ -17,6 +17,7 @@ import torch
 from sklearn.metrics import confusion_matrix, f1_score
 
 from gotrain.engine import segmentation as seg
+from gotrain.engine.stats import keep_classes, write_stats
 from gotrain.engine.data import _load_arrays, load_split, load_stats
 from gotrain.engine.models import build_model
 from gotrain.engine.tasks import band_roles, display_scale, ignore_index, info
@@ -47,13 +48,13 @@ def _load_model(run_dir, task, cfg, device, split_data):
 def _model_and_probs(run_dir, task, cfg, device, split_data, tta):
     """Classification: class probabilities (N, n_classes)."""
     model, mean, std = _load_model(run_dir, task, cfg, device, split_data)
-    return predict(model, torch.from_numpy(split_data["x"]), cfg, mean, std, device, tta=tta)
+    return predict(model, split_data["x"], cfg, mean, std, device, tta=tta)
 
 
 def _model_and_masks(run_dir, task, cfg, device, split_data, tta):
     """Segmentation: predicted class maps (N, H, W) uint8."""
     model, mean, std = _load_model(run_dir, task, cfg, device, split_data)
-    return seg.predict(model, torch.from_numpy(split_data["x"]), lambda x: prepare(x, cfg, mean, std),
+    return seg.predict(model, split_data["x"], lambda x: prepare(x, cfg, mean, std),
                        device, tta=tta, batch_size=cfg["batch_size"], ignore_index=ignore_index(task))
 
 
@@ -90,6 +91,14 @@ def evaluate(run_dir: str, split: str = "val", tta: bool = False) -> dict:
         plot_confusion(cm, data["classes"], plots / f"confusion{suffix}.png")
         plot_failures(data, probs, task, plots / f"failures{suffix}.png")
 
+    if tta:  # per-sample outputs with TTA, for the TTA gate (noise.tta_gate against val_stats.npz)
+        if info(task)["type"] == "segmentation":
+            write_stats(run_dir / "val_stats_tta.npz", data["ids"], data["groups"], "miou",
+                        keep_classes(data["classes"], ign), confusion=seg.per_image_confusion(pred, data["y"],
+                                                                                              data["n_classes"], ign))
+        else:
+            write_stats(run_dir / "val_stats_tta.npz", data["ids"], data["groups"], "accuracy", data["classes"],
+                        y=data["y"], probs=probs)
     result = {"split": split, "tta": tta, **scores, "classes": data["classes"],
               "plots": [str(plots / f"confusion{suffix}.png"), str(plots / f"failures{suffix}.png")]}
     (run_dir / f"eval_{split}{suffix}.json").write_text(json.dumps(result, indent=2))
@@ -103,24 +112,6 @@ def sample_ids(data: dict, split: str) -> tuple[np.ndarray, np.ndarray]:
     ids = np.asarray(data["ids"]).astype(str) if "ids" in data else np.array([f"{split}-{i:05d}" for i in range(n)])
     groups = np.asarray(data["groups"]).astype(str) if "groups" in data else ids
     return ids, groups
-
-
-def write_stats(path: Path, ids, groups, primary: str, classes, y=None, probs=None, confusion=None) -> str:
-    """Write val_stats.npz / test_stats.npz (docs/INTERFACES.md §7); returns its sha256."""
-    arrays = {"ids": np.asarray(ids).astype(str), "groups": np.asarray(groups).astype(str),
-              "primary": np.asarray(primary), "classes": np.asarray(list(classes)).astype(str)}
-    if confusion is not None:
-        arrays["confusion"] = np.asarray(confusion, dtype=np.int64)
-    else:
-        arrays["y"] = np.asarray(y).astype(np.int16)
-        arrays["probs"] = np.asarray(probs).astype(np.float16)
-    path = Path(path)
-    tmp = path.with_name(path.name + ".tmp.npz")
-    np.savez_compressed(tmp, **arrays)
-    tmp.replace(path)
-    if path.stat().st_size >= 1 << 20:
-        raise RuntimeError(f"{path.name} is {path.stat().st_size} bytes; the limit is 1 MB")
-    return _sha256(path.read_bytes())
 
 
 def final_test(run_dir: str, tta: bool) -> dict:

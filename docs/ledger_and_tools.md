@@ -346,3 +346,53 @@ as is, then with the evidence pair's backbone (e.g. when the target's default en
 
 `level1.md` now tells the agent to pass its own draft to `compose_config(draft=...)` when nothing applies, so an A⁺
 can be built.
+## Step 7 changes (31 Oct) — fixed run budget, noise gate, cache v2, Sentinel
+
+- **Fixed run budget** (`engine/train.py`): with `time_limit_min = R`, the run's clock starts at process start.
+  Training stops at R minus the measured val pass (×1.25) minus a small margin. The learning rate is a cosine on
+  elapsed time to that stop (warmup by steps), so every run ends annealed (`metrics.lr_final_fraction`). The best
+  epoch's per-sample outputs go to `val_stats.npz`. `metrics.json` adds `steps`, `startup_s`, `val_pass_s`,
+  `stopped_by` and `val_stats_sha256`. `epochs` only matters for manual runs without a cap.
+- **Noise gate** (`gotrain/noise.py`, docs/INTERFACES.md §7): a grouped paired bootstrap (2,000 replicates,
+  multinomial group weights), with `sigma_seed` = |val(A′) − val(A)| and sigma = sqrt(sd_boot² + sigma_seed²).
+  Outcomes:
+  - Decision runs are `first` / `kept` (z ≥ 2) / `within_noise` / `regressed` (z ≤ −2) against the incumbent
+    at the time they finish.
+  - Other rows are `failed`, `killed`, `screen`, `seed_repeat` or `level2`.
+  - The incumbent is the first finished decision run, replaced only by a z ≥ 2 run.
+  - `noise.tta_gate` uses `val_stats_tta.npz`, written by `evaluate_run(tta=True)`.
+- **Harness A′** (`runs.harness_step`, for the calling session only, while its Level 1 is open):
+  - It launches the seed repeat of the first finished decision run (`stage: seed_repeat`, `launched_by: harness`,
+    seed + 1) and relaunches it once if it fails.
+  - It runs only right before the agent's next launch (that launch is refused with "wait for the seed repeat")
+    and at the end of Level 1, so the agent can evaluate A on an idle GPU first. `sync` never launches anything.
+  - `kill_run` refuses harness rows. When A′ settles, a `sigma_seed` record goes to sessions.jsonl.
+- **Tree moves:** each run records `move` (`draft` without a parent, `debug` from a failed or killed parent,
+  otherwise `improve`), `knob_diff` (knob groups changed vs the parent) and `recipe_hash`. An agent improve run that
+  changes more than one knob group is refused. `show_tree` gives the text tree and a PNG (coloured by outcome,
+  incumbent ringed).
+- **Cache v2** (`engine/data.py`): `workspace/cache/<task>/v2/`, memory-mapped, in the narrowest lossless dtype
+  (uint16 for S2), channels pre-ordered, with ids and groups (`tasks.GROUP_BY`; cashew: identical label mask =
+  one location, 16 val groups). Batches become float32 one at a time. `python -m gotrain.engine.data build <task>`
+  builds under the GPU lock. The test split keeps the v1 path, through `final_test` only.
+- **Sentinel:**
+  - Kept: `heartbeat.json` (startup / train / val, step, last step time; a thread rewrites it every 30 s), and the
+    non-finite-loss stop (10 consecutive steps or a non-finite epoch mean gives `failure_reason: non-finite loss`).
+  - Added: the hang kill. In phase train only, after the first step, a run with no step for
+    max(min(3 min, R/2), 60 s) is killed with `failure_reason: no progress`.
+  - Added: the over-cap kill. In any phase, a run still alive max(1 min, R/4) past its cap is killed with
+    `failure_reason: over cap`.
+  - Both checks run from a watcher thread per launch and from every `sync`, and `sync`, `kill` and the Sentinel
+    serialise on one lock.
+  - Charging uses the last write of status.json, heartbeat.json or the log.
+  - Fault hooks for gates, honoured only in a sandbox: `GOTRAIN_FAULT=nan_loss|stall`.
+- Gate: `tests/test_step7.py` (CPU) + `scripts/gate_step7.py` (GPU, sandbox).
+- **GPU discipline:**
+  - `evaluate_run` runs under the GPU lock and refuses while a training holds it.
+  - `finalize` refuses while any run is training, and holds the GPU lock across `final_test`, taken before the
+    registry's `opened` line.
+  - A session holds the instance lease, so other processes' GPU jobs are refused.
+  - The training clock starts at launch (`GOTRAIN_T0`), so R covers the child's imports too.
+- **Tool calls:** they are serialised by polling a lock, so the Strands thread pool is never exhausted (a test drives
+  more parallel calls than the pool has threads). Each agent ledger row records the `tool_use_id` of its
+  `launch_training` call.

@@ -33,14 +33,18 @@ class Session:
     R: float
     P1: float
     P2: float
-    playbook_path: Path
-    playbook_readonly: bool
+    playbook_read_path: Path            # lessons are read here: the frozen snapshot for #5 ON, else WORKSPACE's
+    playbook_write_path: Path | None    # lesson writes append here (WORKSPACE/playbook.jsonl); None = arm off / dry run
     dry_run: bool = False
     extra: dict = field(default_factory=dict, compare=False)
 
     @property
     def screen_cap(self) -> float:
         return round(self.R / 3, 4)
+
+    @property
+    def playbook_readonly(self) -> bool:
+        return self.playbook_write_path is None
 
 
 def pots(B: float) -> dict:
@@ -108,18 +112,22 @@ def completed_phases(session_id: str) -> set[str]:
     return {r["phase"] for r in records(session_id) if r["type"] == "phase_done"}
 
 
-def phase_done(session_id: str, phase: str) -> None:
-    ledger.append(SESSIONS, {"type": "phase_done", "session_id": session_id, "phase": phase, "time": ledger.now()})
+def phase_done(session_id: str, phase: str, **extra) -> None:
+    """extra: tokens {inputTokens, outputTokens, totalTokens}, tool_calls, wall_min of that phase."""
+    ledger.append(SESSIONS, {"type": "phase_done", "session_id": session_id, "phase": phase, **extra,
+                             "time": ledger.now()})
 
 
 def from_header(h: dict) -> Session:
+    w = h.get("playbook_write_path")
     return Session(session_id=h["session_id"], task=h["task"], arm=h["arm"], phases=tuple(h["phases"]),
-                   B=h["B"], R=h["R"], P1=h["P1"], P2=h["P2"], playbook_path=Path(h["playbook_path"]),
-                   playbook_readonly=h["playbook_readonly"], dry_run=h.get("dry_run", False))
+                   B=h["B"], R=h["R"], P1=h["P1"], P2=h["P2"], playbook_read_path=Path(h["playbook_read_path"]),
+                   playbook_write_path=Path(w) if w else None, dry_run=h.get("dry_run", False))
 
 
-def start(task: str, arm: str, phases: tuple[str, ...], B: float, playbook_path: Path, playbook_readonly: bool,
-          model: str, scope: dict, session_id: str | None = None, dry_run: bool = False) -> Session:
+def start(task: str, arm: str, phases: tuple[str, ...], B: float, playbook_read_path: Path,
+          playbook_write_path: Path | None, model: str, scope: dict, session_id: str | None = None,
+          dry_run: bool = False) -> Session:
     """Create a session and write its header (or reopen an existing session id, e.g. level2 after level1)."""
     if arm not in ARMS:
         raise ValueError(f"arm must be one of {ARMS}")
@@ -137,12 +145,14 @@ def start(task: str, arm: str, phases: tuple[str, ...], B: float, playbook_path:
             return Session(**{**s.__dict__, "phases": tuple(phases), "dry_run": dry_run})
     sid = session_id or new_session_id(task, arm)
     p = pots(B)
-    s = Session(session_id=sid, task=task, arm=arm, phases=tuple(phases), playbook_path=Path(playbook_path),
-                playbook_readonly=playbook_readonly, dry_run=dry_run, **p)
+    read = Path(playbook_read_path)
+    write = Path(playbook_write_path) if playbook_write_path else None
+    s = Session(session_id=sid, task=task, arm=arm, phases=tuple(phases), playbook_read_path=read,
+                playbook_write_path=write, dry_run=dry_run, **p)
     ledger.append(SESSIONS, {
         "type": "session_start", "session_id": sid, "task": task, "arm": arm, "phases": list(phases),
         "workspace": str(WORKSPACE), **p, **code_identity(), "prompt_hash": prompt_hash(),
-        "playbook_path": str(playbook_path), "playbook_readonly": playbook_readonly,
-        "playbook_hash": file_hash(Path(playbook_path)), "playbook_snapshot": str(playbook_path) if playbook_readonly and arm == "main" else None,
+        "playbook_read_path": str(read), "playbook_write_path": str(write) if write else None,
+        "playbook_hash": file_hash(read), "playbook_snapshot": str(read) if read != write and arm == "main" else None,
         "model": model, "versions": versions(), "scope": scope, "dry_run": dry_run, "time": ledger.now()})
     return s

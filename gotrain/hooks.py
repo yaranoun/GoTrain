@@ -16,6 +16,8 @@ from strands.experimental.hooks import AfterToolInvocationEvent, BeforeToolInvoc
 from strands.hooks import HookProvider, HookRegistry
 from strands.types.tools import AgentTool
 
+from gotrain.context import TOOL_USE_ID
+
 TEXT_CAP = 2000
 CAP_EXEMPT = frozenset({"list_backbones", "read_playbook", "compose_config", "mine_effects", "query_ledger"})
 IMAGE_MAX_SIDE = 1024
@@ -42,10 +44,20 @@ class _SerialTool(AgentTool):
         return self._inner.tool_type
 
     async def stream(self, tool_use, invocation_state, **kwargs):
-        await asyncio.to_thread(_TOOL_LOCK.acquire)
+        # Poll instead of blocking an executor thread on the lock: Strands runs every sync tool through
+        # asyncio.to_thread, and parking threads on the lock would exhaust the default executor (deadlock).
+        while not _TOOL_LOCK.acquire(blocking=False):
+            await asyncio.sleep(0.05)
         try:
-            async for event in self._inner.stream(tool_use, invocation_state, **kwargs):
-                yield event
+            token = TOOL_USE_ID.set(tool_use.get("toolUseId"))
+            try:
+                async for event in self._inner.stream(tool_use, invocation_state, **kwargs):
+                    yield event
+            finally:
+                try:
+                    TOOL_USE_ID.reset(token)
+                except ValueError:  # finalized in another context
+                    pass
         finally:
             _TOOL_LOCK.release()
 
