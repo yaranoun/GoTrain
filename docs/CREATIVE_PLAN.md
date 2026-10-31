@@ -265,9 +265,8 @@ Within a bucket, lessons are ranked by confidence × similarity of profile featu
 
 "To test" and A⁺ consider only lessons with an empty `context` or a `context` equal to W.
 
-**Unknown scope.** This is the general fallback for data outside the known sensors.
-- **Wildcard.** `unknown` acts as a wildcard on the unknown feature(s) only. A lesson whose *known* features match goes to "to test", never "apply".
-- **Never applied.** A lesson whose own scope contains `unknown` is never applied anywhere, including on another unknown dataset.
+**Unknown scope.** *The wildcard fallback was cut on 31 Oct (§7.4 item 4.4).* Only the basic rule stays:
+- **Never applied.** A lesson whose own scope contains `unknown`, or any lesson on a dataset whose scope contains `unknown`, is never applied. It can still be listed under "to test".
 - **Chain tasks.** None of the chain's datasets may have an unknown feature. `run.py --arm main` exits if a chain task's scope contains `unknown`, and the session header records the scope.
 
 **Applying and re-testing.**
@@ -413,7 +412,7 @@ We report the result, whatever it is.
 | **6** | **Harness hardening**, including smaller agent context | 3 h | See below. |
 | **7** | **Fixed run budget, noise gate, cache v2, Sentinel kill** | 4 h | See below. |
 | **8** | **Level 3 playbook**, including lesson `context` and unknown-scope fallback | 4 h | See below. |
-| **9** | **Data-state detector** (code can start at once), then **dataset #5 and fallback loaders** (after Step 7's cache lands) | 0.75 h + 1.5 h | The detector classifies channels as expected (see below). SA-crop true colour looks natural. Peak RAM < 12 GB. No SA-crop or nz-cattle row exists in any ledger. The scope of m-SA-crop-type is (segmentation, S2 multispectral, multispectral, (1, 10] m), and of m-nz-cattle (segmentation, aerial RGB, RGB, ≤ 1 m); neither is `unknown`. |
+| **9** | **Dataset #5 and fallback loaders** (after Step 7's cache lands). The data-state detector was **cut on 31 Oct**. | 1.5 h | The cloud layers are checked by hand (see below). SA-crop true colour looks natural. Peak RAM < 12 GB. No SA-crop or nz-cattle row exists in any ledger. The scope of m-SA-crop-type is (segmentation, S2 multispectral, multispectral, (1, 10] m), and of m-nz-cattle (segmentation, aerial RGB, RGB, ≤ 1 m); neither is `unknown`. |
 | **10** | **Session verify, smoke test, freeze F1** | 1.5 h | See below. |
 | **11** | **GPU chain** (unattended, `nohup`, branch `run/chain`) | ≈ 8.5 h at B = 60 | Session verify passes after each dataset. 5 vault entries. The A/B curves are drawn from the two ledgers. |
 | **12** | **Level 2**, built on `main` while Step 11 runs | 4 h + 2 h student | CPU unit tests on synthetic arrays during the chain. GPU dress rehearsal in the sandbox slot after #5 OFF. The composite re-scores identically. The synthetic pytest writes a vault entry listing member hashes, plus a composite `test_stats.npz` whose hash is in that entry. |
@@ -438,7 +437,7 @@ We report the result, whatever it is.
     - `read_playbook` and `mine_effects` show one line (≤ 200 characters) per lesson or effect: id, status, confidence, intervention, z. They paginate in a fixed rank order ("page i/n"), with full text via `read_playbook(lesson_id=…)`.
     - `query_ledger` is limited by `top_k`, never cut mid-row.
   - Downscale images to a long side of ≤ 1,024 px.
-  - Keep only the latest image of each kind (tool + image title) in the conversation, where Strands allows it; otherwise rely on the sliding window.
+  - ~~Keep only the latest image of each kind in the conversation~~: **cut on 31 Oct** (§7.4 item 4.3). The caps and the sliding window stay.
   - Split the token counts in the `session_end` record, which `run.py` already writes, into input and output.
 - **Gate:**
   - two parallel launches give one run and one refusal;
@@ -484,20 +483,21 @@ We report the result, whatever it is.
 - `gotrain/playbook.py`: `mine_effects`, `add_lesson`, `record_tests`, `retrieve`, `compose_config` (including A±), `update_status`, `snapshot`.
 - `gotrain/tools/memory.py`: `read_playbook`, `compose_config`, `mine_effects`, `add_lesson`, `request_knob`.
 - A reflect phase in `run.py`: fresh context, no vault access.
-- The lesson `context` field and the two-pass `compose_config` (idea 3, §12), plus the unknown-scope fallback (idea 2).
+- The lesson `context` field and the two-pass `compose_config` (idea 3, §12). The unknown-scope fallback (idea 2) was **cut on 31 Oct**; only "unknown → never apply" stays (§4.5).
 - **Gate:**
   - unit tests on a synthetic ledger cover every status rule in §4.5;
   - a lesson born from two ImageNet-weights runs has context "ImageNet": it lands in "other context", not "apply", when W is EO-pretrained;
   - a synthetic `band_fill` lesson is not applied when A uses ImageNet weights, and A stays valid;
   - a synthetic playbook {SSL4EO weights lesson, EO-context `band_fill` lesson, EO-context `lr` lesson} gives a valid A⁻ that differs from A in one knob group;
   - an out-of-context pair is recorded `out_of_context` and not counted;
-  - on a synthetic dataset with an unknown sensor, matching lessons appear in "to test", never "apply"; a lesson born there is not applied on a second unknown dataset;
+  - on a synthetic dataset with an unknown sensor, no lesson lands in "apply";
   - on the four real tasks, eurosat lessons with an empty context (or a context equal to brick-kiln's W) land in "apply" for brick-kiln, in "to test" for cashew (producing an A⁺), and are hidden on pv4ger-seg;
   - manual and operator rows are rejected as evidence;
   - an empty playbook behaves exactly like OFF.
 
-**Step 9 — Data-state detector, then dataset #5 and fallback loaders.**
-- **Data-state detector** (idea 4, §12).
+**Step 9 — Dataset #5 and fallback loaders.**
+- **Cut on 31 Oct** (§7.4 item 4.2): the data-state detector below is not built. Instead, the cloud layers of cashew and SA-crop are checked by hand (value range and distinct values printed from the train split), and the result is noted in `tasks.py`. The detector spec is kept for later work.
+- ~~**Data-state detector**~~ (idea 4, §12).
   - **Reading the data.** It reads every on-disk channel through a new `load_split(task, "train", raw_channels=True)`. That call keeps the train/val guard and skips the `CHANNELS` permutation. The detector never opens the raw folder or the test partition.
   - **Classification by scale, not by integer-ness**, tested in this order:
     1. **mask-like:** ≤ 16 distinct values, or ≥ 50% of values exactly 0;
@@ -508,7 +508,7 @@ We report the result, whatever it is.
   - **Output.** It adds the per-channel `value_state` and a `suggested_norm` to the profile, and `profile_dataset` shows both to the agent.
   - **Norm in the chain.** The default norm still comes from the model zoo (`norm=None`). The agent may override it with the existing `norm` key (part of the backbone/weights knob group). Code never applies `suggested_norm` automatically; that comes later, with the dataset adapter.
   - **Timing.** The code can be built at once and tested on #1–#4. It runs on SA-crop only after cache v2 lands, under the machine-wide lock.
-- **Detector gate:**
+- ~~**Detector gate:**~~ (cut)
   - eurosat and brick-kiln Sentinel-2 bands, including eurosat's B10, are detected as reflectance ×10⁴, with no band names used;
   - brick-kiln's TCI channels are detected as 8-bit;
   - cashew's and SA-crop's cloud layers are detected as mask-like;
@@ -655,6 +655,7 @@ Option C (§12), with the safeguards added in its review, adds ≈ 1.25 h before
 - With O = 2.75 h, B = 20 needs F1 by ≈ 03:20, and B = 30 needs F1 by ≈ 02:20.
 - With F1 at 03:45, B = 20 still fits if the smoke test measures O ≤ ≈ 2.3 h.
 - B is still chosen once, at F1, by the §7.3 formula with the measured O.
+- **Cuts on 31 Oct** (§7.4 items 4.2–4.4): of the three, only dropping old images was on the build agent's critical path (Step 6). The cuts move F1 by about 15–30 min, to ≈ 03:15–03:30. The detector and the unknown-scope fallback were second-session work, so cutting them frees that session for Steps 8 and 9.
 
 ### 7.3 Scope ladder (computed once at F1; never changed mid-chain; the same on every dataset)
 
@@ -678,9 +679,9 @@ Option C (§12), with the safeguards added in its review, adds ≈ 1.25 h before
 3. Dashboard polish (keep the PNGs).
 4. Option C extras, in this order:
    1. the Sentinel audit;
-   2. the data-state detector (keep the cloud-layer check by hand);
-   3. dropping old images from the conversation (keep the caps);
-   4. the unknown-scope fallback (keep the rule "unknown → never apply").
+   2. the data-state detector (keep the cloud-layer check by hand): **cut on 31 Oct**;
+   3. dropping old images from the conversation (keep the caps): **cut on 31 Oct**;
+   4. the unknown-scope fallback (keep the rule "unknown → never apply"): **cut on 31 Oct**.
 5. The live-demo segment (keep the recording).
 6. The real S3 backend (keep `LocalStore` and a slide; the brief accepts a file system).
 7. MCP `train_model` jobs (keep the read-only MCP server).
@@ -701,7 +702,9 @@ Option C (§12), with the safeguards added in its review, adds ≈ 1.25 h before
 
 ---
 
-## 8. Presentation plan (assumes 5–8 minutes plus Q&A; to confirm)
+## 8. Presentation plan
+
+**Decided 31 Oct: 3–4 minutes in total for the live presentation and the video together. The video is upbeat:** a faster voice, a music bed, and quick cuts. The ten messages below therefore have to be compressed. The video carries the story and the demo, and the live slides carry the evidence. The split is set in `GoTrain-pitch/build/STORY.md`.
 
 Every number on the slides comes from `python -m gotrain.report`.
 
@@ -719,7 +722,7 @@ Every number on the slides comes from `python -m gotrain.report`.
 | 10 | What we would ship at RASID | The agent's logged knob requests, Level 2 roadmap, closing headline |
 
 **Demo.**
-- **Main:** a 60–90 s recording of a real session, sped up. It shows playbook → hypothesis → launch → failure images → gated outcome → new lesson.
+- **Main:** a short, upbeat recording (it sits inside the 3–4 minute total) of a real session, sped up. It shows playbook → hypothesis → launch → failure images → gated outcome → new lesson.
 - **Live, zero risk:** `python -m gotrain.verify`, and the GoPilot client listing models over MCP.
 
 **Prepared answers:**
@@ -766,7 +769,7 @@ Every number on the slides comes from `python -m gotrain.report`.
 7. **Configs only; failure images visible** (O1, O2).
 8. **Positioning wording** in §4.7, now that HASTE and ML-Master 2.0 are known prior art.
 9. **Night-time go criteria** for F1 (Step 10 gate).
-10. **Logistics:** **deadline T = 11:00 on 1 Nov (decided 31 Oct).** Still open: slot length, presenters, who asks the organisers.
+10. **Logistics:** **deadline T = 11:00 on 1 Nov (decided 31 Oct).** **Slot: 3–4 minutes in total, presentation and video together; the video is upbeat (decided 31 Oct).** Still open: presenters, Q&A length.
 
 ---
 
@@ -796,13 +799,13 @@ Aya proposed eight ideas after the plan was approved. Option C keeps the ones th
 | # | Idea | In option C | Later / not done | Where |
 |---|---|---|---|---|
 | 1 | Dataset size vs data errors | Evaluation side: the noise gate (already in the plan), plus 95% intervals on test scores | Flagging likely-mislabelled train samples (`show_suspects`) and a `drop_suspects` knob the agent could test. How strongly to handle noise on small datasets is learned through lessons (training-set size is a ranking feature), not a fixed formula. | Steps 6, 7, 14 |
-| 2 | Works on any dataset | Unknown-scope fallback: lessons are never applied automatically to an unknown sensor | A dataset adapter (folders of GeoTIFFs plus a small `dataset.yaml`: sensor, bands, resolution, nodata, ignore class) feeding the same cache, and an MCP demo on non-GEO-Bench data | Step 8; later: production layer |
+| 2 | Works on any dataset | ~~Unknown-scope fallback~~ (cut 31 Oct); kept: lessons are never applied to an unknown sensor | A dataset adapter (folders of GeoTIFFs plus a small `dataset.yaml`: sensor, bands, resolution, nodata, ignore class) feeding the same cache, and an MCP demo on non-GEO-Bench data | Step 8; later: production layer |
 | 3 | Physics priors for small models | Lesson `context` (weights family). For example, "label smoothing 0.1 helps", learned with ImageNet weights, is applied only when A uses ImageNet weights. | `indices` knob (NDVI / NDWI / NDBI channels): post-hackathon, unless Aya adds it before Step 8 (+1 h) | Step 8; §4.3 |
-| 4 | Detect whether data is already processed | Data-state detector in the profile, with a suggested normalisation | Choosing the normalisation automatically (with the adapter) | Step 9 |
+| 4 | Detect whether data is already processed | ~~Data-state detector~~ (cut 31 Oct); kept: cloud-layer check by hand | Choosing the normalisation automatically (with the adapter) | Step 9 |
 | 5 | Any Hugging Face model | — (the model zoo stays fixed and frozen at F1, so datasets and arms stay comparable) | A `search_models` tool that checks channels, input size and parameter count, plus a smoke forward pass, before a model joins an extended zoo | Later: production layer |
 | 6 | The playbook persists | Already guaranteed (append-only, committed after each dataset, synced, served over MCP), plus a `verify` check that it only grows | Seeding the playbook by hand: **not done**, because it would break L2 and the with/without proof. GoPilot inherits our playbook after the hackathon instead. | Steps 11, 13, 14 |
 | 7 | Sentinel guard | Minimal, deterministic: kill on non-finite loss or no progress, plus an audit that flags overfitting and score jumps | A fuller Sentinel inside the harness, or an LLM-based guard | Steps 7, 14 |
-| 8 | Keep the agent's context small | Capped tool text, downscaled images, old images dropped, token counts logged | — | Step 6 |
+| 8 | Keep the agent's context small | Capped tool text, downscaled images, token counts logged (dropping old images cut 31 Oct) | — | Step 6 |
 
 **Cost of option C**, including the safeguards added in its review: ≈ +1.25 h to the freeze with two coding sessions, ≈ +2.5 h with the build agent alone (§7.2).
 
