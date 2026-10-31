@@ -465,3 +465,13 @@ JSON report go to `.sandbox/step9/`). Gate tests without data: `tests/test_step9
   50 val locations also occur in train: disclosed). `GROUP_BY = nz_location` (name without `_shifted`).
 - Scopes: SA-crop (segmentation, s2-multispectral, multispectral, (1,10]m); nz-cattle (segmentation, aerial-rgb,
   rgb, ≤1m). No ledger row for either task exists in any checkout.
+- **Dry epochs** (`scripts/step9_dry_epoch.py`, 31 Oct 20:56, Tesla T4, shared cache read-only, under
+  `gpu_lock("s2-step9")`, no labels read, no weights kept; refused while a lease is held):
+
+  | Task, config | Steps | Time | Peak RSS | Peak GPU |
+  |---|---|---|---|---|
+  | SA-crop, resnet34/imagenet U-Net (default), bs 16 | 187 (full epoch) | 57.0 s (0.305 s/step) | 4.41 GB | 1.37 GB |
+  | SA-crop, resnet18/ssl4eo_moco (13 bands), bs 16 | 40 | 0.198 s/step (≈ 37 s/epoch) | 2.61 GB | 1.11 GB |
+  | nz-cattle, resnet34/imagenet U-Net (default), bs 16 | 32 (full epoch) | 16.9 s (0.528 s/step) | 1.82 GB | 3.98 GB |
+
+  Gate: peak RAM < 12 GB ✓.
