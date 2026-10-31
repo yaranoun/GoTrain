@@ -507,3 +507,24 @@ JSON report go to `.sandbox/step9/`). Gate tests without data: `tests/test_step9
   model card, or `--ask "<question>"` runs a Strands agent (Bedrock) with the tools.
 - Tests: `tests/test_step13.py` (synthetic finalized models and a Level 2 ensemble; the vault rows it adds are
   removed again at teardown).
+
+## Step 14 (31 Oct, on placeholder data) — report, Sentinel audit, full verify
+
+- **Placeholder data:** `python tests/fixtures/make_report_fixture.py [<out>]` writes a synthetic three-task
+  workspace (default `tests/fixtures/report_workspace/`, gitignored; tests build it in a temp folder). Never results.
+- **Report:** `GOTRAIN_WORKSPACE=<ws> python -m gotrain.report [--out report/] [--ab <metrics.json> ...]` writes
+  `results.json` / `results.md` (per task: finalized model, val, test from the vault with its 95% grouped bootstrap
+  interval, GEO-Bench reference + protocol flag, GPU minutes, tokens, lessons born/applied, incidents),
+  `trees/<session>.png|.txt` (Level 2 composites included), `lesson_flow.png`, `level2.md`, `sentinel_audit.json|.md`,
+  `ab_<task>.png` (copied from analyze.py's `curves.png`), and `dashboard.html`. Deterministic.
+- **Sentinel audit:** overfitting = the val primary falls for 3 epochs in a row while the train loss keeps falling
+  (runs with ≥ 5 epochs, from `history.csv`); suspicious jump = z > 6 against the parent (paired bootstrap + the
+  session's sigma_seed). Each flag cites its run.
+- **Full verify:** `python -m gotrain.verify --full` (with or without `--session`): `vault_chain`,
+  `artifact_hashes` (model / member / test_stats.npz vs the vault), `lessons_predate_test` (born before their own
+  dataset's test touch: #1–#4 are finalized as they go), `test_registry_copy` (done lines ↔ vault entries, the
+  voided INC-001 line present), `registry_hashes`, `lesson_evidence`, `playbook_grew` (prefix-only along `run/chain`
+  since `freeze-f1`, absent at the tag), `main_untouched` (no `main` commit after `freeze-f1` touches `workspace/`).
+  The git checks print `n/a` until the tag and branch exist.
+- Tests: `tests/test_step14.py` (two identical report runs, overfitting and jump flags, full verify twice
+  identical, one tamper per check).
