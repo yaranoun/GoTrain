@@ -410,3 +410,22 @@ arm off and dry runs, where lesson writes refuse). The snapshot is never written
   `gotrain.noise` functions.
 - Tested on `tests/fixtures/two_ledgers/` (`tests/test_analyze.py`); the fixture's `val_stats.npz` files are
   tracked (`.gitignore` exception).
+
+## Session verify (31 Oct) — `python -m gotrain.verify`
+
+`GOTRAIN_WORKSPACE=<ws> python -m gotrain.verify --session <id> [--checks transcript,ledger,noise,pot]` prints one
+line per check (`<check>: ok (<summary>)` or `<check>: FAIL (<n>): <first problems>`) and exits 1 on any failure,
+2 if the session is not in the workspace or its header names another workspace. Read-only. Definitions:
+INTERFACES v2 §4 and §10; code: `gotrain/verify.py`; tests: `tests/test_verify.py` (synthetic sessions settled the
+way `runs.sync` settles runs, plus one tamper per rule).
+- **transcript:** each agent row ↔ exactly one successful `launch_training` toolResult with the row's
+  `tool_use_id`, whose toolUse input matches `hypothesis`, `parent_run_id`, `stage`, `overrides`; no successful
+  launch without a row.
+- **ledger:** arm/task vs the header; `recipe_hash` and `knob_diff` recompute; `move` from the parent; run cap R/3
+  iff screen, else R; improve rows have a done parent in the session and ≤ 1 changed group; seed repeats are
+  harness copies of A. Level 2 composites (`mechanism` tta/ensemble, `run_cap_min` null) must be harness rows.
+- **noise:** for every done agent decision run, replays the incumbent and recomputes `noise.delta`, `sd_boot`
+  (seed 0), `sigma_seed` (null before the `sigma_seed` record), `sigma`, `z`, `z_vs_incumbent` and the outcome;
+  the `sigma_seed` record equals |score(A′) − score(A)|.
+- **pot:** each launch fits its pot (P1: screen/train/seed_repeat; P2: level2); ≤ 2 screens; no P1 row after the
+  first level2 row; `charged_min` ≤ cap + 0.25; total P2 charge ≤ P2 + 0.25 (composites have no cap).
