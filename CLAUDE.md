@@ -73,6 +73,7 @@ python -m pytest -q tests/                                  # gates (CPU, synthe
 - Caches are built only by a GPU-lock holder (`python -m gotrain.engine.data build <task>` or a training subprocess); `load_stats` never builds. Changing `CHANNELS`/`GROUP_BY` for a task makes its cache stale (`StaleCache`): rebuild it.
 - `load_split` returns memmaps in narrow dtypes: use `data.batch(x, idx)` / `data.to_float(...)`, never `np.asarray` on a whole split.
 - GEO-Bench calls the val split `valid`; we use `val` (mapped in `data.py`).
+- `m-SA-crop-type` is stored **8-bit** (0–255, about reflectance × 255), unlike the other S2 tasks (reflectance × 1e4): `tasks.VALUE_SCALE` multiplies it by 10000/255 (rounded, lossless) when it enters the cache and when `final_test` loads test. Its cloud layer is 0 everywhere (dropped); 5 dates per field tile (`GROUP_BY` label_hash, 250 val groups). `m-nz-cattle`: `_shifted` twins grouped by name (`nz_location`); 50 val locations also appear in train (GEO-Bench split, disclosed).
 - SSL4EO weights (torchgeo) expect 13 canonical S2 bands, input /10000, 224px.
 - Strands tools can return images: `{"status": "success", "content": [{"text": ...}, {"image": {"format": "png", "source": {"bytes": ...}}}]}`.
 
