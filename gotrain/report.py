@@ -14,7 +14,8 @@ Reads GOTRAIN_WORKSPACE (try it on placeholder data: `python tests/fixtures/make
 - sentinel_audit.json / .md: overfitting (val falls for >= 3 epochs in a row while train loss keeps falling; runs
   with >= 5 epochs) and suspicious jumps (z > 6 against the parent), each citing its run;
 - ab_<task>.png: the A/B curve from analyze.py's output (--ab, or every experiments/playbook-ab/*/metrics.json);
-- dashboard.html: one static page with all of the above.
+- dashboard.html: one static page with all of the above; readme_results.md (and, with --readme, the
+  README's results block between its markers).
 Deterministic: the same inputs give byte-identical results.json, results.md and sentinel_audit.json.
 """
 
@@ -339,7 +340,41 @@ def dashboard(out: Path, rows, flags, trees, ab_images, flow) -> Path:
     return path
 
 
-def build(out: Path, ab: list[Path] | None = None) -> dict:
+README_BEGIN = "<!-- results:begin (written by python -m gotrain.report --readme; do not edit by hand) -->"
+README_END = "<!-- results:end -->"
+
+
+def ab_summary(metrics: dict) -> str:
+    on, off = metrics["arms"]["on"], metrics["arms"]["off"]
+    p = metrics.get("primary")
+    d = metrics["difference_on_minus_off"]
+    s = metrics.get("sigma_AB", {}).get("value")
+    s_txt = f"σ_AB {s:.4f}" if s is not None else "σ_AB n/a"
+    return (f"- **{metrics['task']}** (held out; B = {metrics['protocol']['B']:g}, R = {metrics['protocol']['R']:g}): "
+            f"anytime AUC ON {on['auc']:.4f} vs OFF {off['auc']:.4f} (Δ {d['auc']:+.4f}); best val at P1 "
+            f"{_fmt(p, on['val_at']['P1'])} vs {_fmt(p, off['val_at']['P1'])}; first run {_fmt(p, on['first_run_val'])} "
+            f"vs {_fmt(p, off['first_run_val'])}; {s_txt}.")
+
+
+def readme_block(rows: list[dict], ab: list[dict]) -> str:
+    parts = [README_BEGIN, "", results_md(rows).rstrip()]
+    if ab:
+        parts += ["", "With vs without the playbook (`experiments/playbook-ab/analyze.py`; n = 1, val only):", ""]
+        parts += [ab_summary(m) for m in ab]
+    parts += ["", README_END]
+    return "\n".join(parts)
+
+
+def fill_readme(path: Path, block: str) -> None:
+    text = path.read_text()
+    if README_BEGIN not in text or README_END not in text:
+        raise SystemExit(f"{path}: no results markers")
+    head, rest = text.split(README_BEGIN, 1)
+    _, tail = rest.split(README_END, 1)
+    path.write_text(head + block + tail)
+
+
+def build(out: Path, ab: list[Path] | None = None, readme: Path | None = None) -> dict:
     out.mkdir(parents=True, exist_ok=True)
     rows = results()
     (out / "results.json").write_text(json.dumps(rows, indent=1, sort_keys=True) + "\n")
@@ -363,15 +398,22 @@ def build(out: Path, ab: list[Path] | None = None) -> dict:
             shutil.copyfile(png, dest)
             ab_images.append(dest)
     page = dashboard(out, rows, flags, trees, ab_images, flow)
-    return {"out": str(out), "tasks": [r["task"] for r in rows], "flags": len(flags), "dashboard": str(page)}
+    block = readme_block(rows, [json.loads(Path(m).read_text()) for m in ab if Path(m).exists()])
+    (out / "readme_results.md").write_text(block + "\n")
+    if readme is not None:
+        fill_readme(readme, block)
+    return {"out": str(out), "tasks": [r["task"] for r in rows], "flags": len(flags), "dashboard": str(page),
+            "readme": str(readme) if readme else None}
 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", type=Path, default=REPO / "report")
     ap.add_argument("--ab", type=Path, nargs="*", help="analyze.py metrics.json files (default: all under experiments/)")
+    ap.add_argument("--readme", type=Path, nargs="?", const=REPO / "README.md",
+                    help="also rewrite the results block of this README (default README.md)")
     args = ap.parse_args(argv)
-    print(json.dumps(build(args.out, args.ab), indent=1))
+    print(json.dumps(build(args.out, args.ab, args.readme), indent=1))
     return 0
 
 

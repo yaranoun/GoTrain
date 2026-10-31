@@ -139,6 +139,15 @@ def build(out: Path | None = None) -> Path:
                                                       "kept" if score > p["scores"][0] + 0.02 else "within_noise"),
                    "artifacts": {"dir": str(d.relative_to(WS)), "log": f"logs/{rid}.log",
                                  "checkpoint_sha256": sha_file(d / "checkpoint.pt")}}
+            if rec["launched_by"] == "agent":  # the transcript's launch_training call that created the row
+                rec["tool_use_id"] = f"tu-{rid}"
+                log = WS / "agent_logs" / f"{sid}.level1.jsonl"
+                append(log, {"type": "message", "role": "assistant", "content": [{"toolUse": {
+                    "name": "launch_training", "toolUseId": rec["tool_use_id"],
+                    "input": {"config": rec["overrides"], "hypothesis": rec["hypothesis"],
+                              "parent_run_id": parent or "", "stage": "train"}}}]})
+                append(log, {"type": "message", "role": "user", "content": [{"toolResult": {
+                    "toolUseId": rec["tool_use_id"], "status": "success", "content": [{"text": f"Launched {rid}"}]}}]})
             append(WS / "ledger.jsonl", rec)
             rows.append(rec)
         append(WS / "sessions.jsonl", {"type": "sigma_seed", "session_id": sid, "value": SIG[task],

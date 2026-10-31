@@ -129,3 +129,18 @@ def test_full_verify_catches_each_tamper(tamper, check, tmp_path):
     assert res.returncode == 1, res.stdout
     failing = [l.split(":")[0] for l in res.stdout.splitlines() if ": FAIL" in l]
     assert failing == [check], res.stdout
+
+
+def test_readme_results_block_is_filled_between_markers(ws, tmp_path):
+    readme = tmp_path / "README.md"
+    readme.write_text((REPO / "README.md").read_text())
+    before = readme.read_text()
+    for _ in range(2):  # idempotent
+        res = _run(["gotrain.report", "--out", str(tmp_path / "r"), "--ab", "--readme", str(readme)], ws)
+        assert res.returncode == 0, res.stdout + res.stderr
+    after = readme.read_text()
+    head, tail = before.split(report.README_BEGIN)[0], before.split(report.README_END)[1]
+    assert after.startswith(head) and after.endswith(tail)  # only the block changed
+    block = after.split(report.README_BEGIN)[1].split(report.README_END)[0]
+    assert "| m-eurosat |" in block and "INC-001 disclosed" in block
+    assert (tmp_path / "r" / "readme_results.md").read_text().strip() == report.README_BEGIN + block + report.README_END

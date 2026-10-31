@@ -30,6 +30,12 @@ machine-wide**, by code. The agent only ever sees the vault hash, never a test s
 > that test pass's `test_stats.npz`. Every GEO-Bench comparison carries a protocol flag (bands, benchmark
 > version, class-0 handling): the published references all use 3-channel input on older benchmark versions.
 
+<!-- results:begin (written by python -m gotrain.report --readme; do not edit by hand) -->
+
+*Results table: written here by `python -m gotrain.report --readme` when the chain ends.*
+
+<!-- results:end -->
+
 **With vs without the playbook** on a held-out dataset (`experiments/playbook-ab/PROTOCOL.md`, written before it
 ran): one paired run, reported with ±2σ bands, whatever the result.
 
