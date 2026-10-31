@@ -37,6 +37,22 @@ def evaluate_run(run_id: str, tta: bool = False) -> dict:
 
 
 @tool
+def record_diagnosis(run_id: str, notes: str) -> dict:
+    """Record what a run's results and mistakes suggest (e.g. which classes are confused and what to try next).
+    Stored in the run's ledger record, so the reasoning behind each next run is traceable.
+
+    Args:
+        run_id: the run you evaluated.
+        notes: your diagnosis, a few sentences.
+    """
+    try:
+        runs.record_diagnosis(run_id, notes)
+    except EXPECTED as e:
+        return error(str(e))
+    return ok(f"Diagnosis recorded for {run_id}.")
+
+
+@tool
 def compare_runs(run_ids: list[str]) -> dict:
     """Compare 2 to 6 runs of one task: which config values differ, their scores, and overlaid learning curves.
 

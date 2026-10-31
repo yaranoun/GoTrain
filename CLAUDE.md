@@ -31,10 +31,12 @@ gotrain/engine/   plain training engine (no agent code)
 gotrain/runs.py   experiment ops behind the tools (plain Python, reusable by MCP): launch/check/kill/evaluate/
                   compare runs, query ledger, budget, finalize; writes the ledger; one training at a time
 gotrain/tools/    Strands @tool wrappers: explore.py, train.py (list_backbones, get_budget, launch_training,
-                  check_run, kill_run), diagnose.py (evaluate_run, compare_runs, query_ledger), finalize.py
+                  check_run, wait_run, kill_run), diagnose.py (evaluate_run, record_diagnosis, compare_runs,
+                  query_ledger), finalize.py
 gotrain/ledger.py JSONL ledger/playbook/vault helpers
 notebooks/        step3_tools_check.ipynb: every tool by hand, in a sandbox workspace
-gotrain/agent.py  agent + system prompt
+gotrain/agent.py  agent + system prompt (workflow) + tool list
+gotrain/run.py    session driver: budget, transcript (agent_logs/*.jsonl + .md), limits, early-finalize policy, resume
 docs/             ledger_and_tools.md (record formats + tool list), PLAN.md (build plan)
 workspace/        runs/, profiles/, ledger.jsonl, vault.jsonl, vault_incidents.jsonl, budget.json, playbook.jsonl (cache/ gitignored)
 ```
@@ -46,6 +48,8 @@ python -m gotrain.engine.profile m-eurosat
 python -m gotrain.engine.train --task m-eurosat --set backbone=resnet50 weights=ssl4eo_moco batch_size=32
 python -m gotrain.engine.train --task m-pv4ger-seg --set backbone=resnet34 weights=imagenet epochs=20
 python -m gotrain.engine.evaluate workspace/runs/m-eurosat/m-eurosat-0002 --tta
+nohup python -m gotrain.run --task m-eurosat --budget-min 60 > logs/agent-m-eurosat.log 2>&1 &   # the agent (finalizes!)
+GOTRAIN_WORKSPACE=.sandbox/workspace python -m gotrain.run --task m-eurosat --budget-min 8          # dry run, no test
 ```
 
 ## Gotchas
@@ -68,6 +72,7 @@ profile → recall playbook → plan candidates → screen cheaply → train bes
 ## Status (31 Oct)
 - **Tasks:** classification `m-eurosat`, `m-brick-kiln`; segmentation `m-pv4ger-seg`, `m-cashew-plant`.
 - Engine done for classification + segmentation; Step 3 tools done (`notebooks/step3_tools_check.ipynb`). Default budget 60 GPU min/task (`runs.set_budget`, operator only).
+- Step 4 agent loop done (`gotrain/run.py`). Sandbox dry run on m-eurosat, 8 GPU min: 7 runs, 96.4% → 98.9% val (ResNet18 SSL4EO 224px), finalize attempted on the best run, 24 tool calls, 9 min, ~265k tokens. finalize is refused until 3 runs finished or <20% budget left (`--min-runs`).
 - m-eurosat val: ResNet18 ImageNet 64px **96.4%** (0.5 min); ResNet50 SSL4EO 224px **98.3%** (4.8 min). TTA gives no gain here (98.2%).
 - m-pv4ger-seg val: U-Net ResNet34 ImageNet 320px, 20 ep **0.955 mIoU**, **0.959 with TTA** (11.7 min).
 - m-brick-kiln val: ResNet18 ImageNet 64px, 30 ep **98.9%** acc (2.3 min); TTA 98.6% (no gain).

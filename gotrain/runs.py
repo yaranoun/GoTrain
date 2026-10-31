@@ -420,6 +420,23 @@ def check(run_id: str) -> dict:
     return out
 
 
+def wait(run_id: str, max_minutes: float = 15.0, poll_s: float = 10.0) -> dict:
+    """Block until the run stops running or max_minutes pass; returns check(run_id). Saves the agent polling."""
+    deadline = time.time() + max(0.0, max_minutes) * 60
+    while True:
+        c = check(run_id)
+        if c["status"] != "running" or time.time() >= deadline:
+            return c
+        time.sleep(poll_s)
+
+
+def record_diagnosis(run_id: str, notes: str) -> dict:
+    """The agent's reading of a run (what the errors suggest); stored in the run record."""
+    if not (notes or "").strip():
+        raise ValueError("notes are required")
+    return _update(_get(run_id), diagnosis=notes.strip())
+
+
 def kill(run_id: str, reason: str) -> dict:
     sync()
     rec = _get(run_id)

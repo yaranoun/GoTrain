@@ -97,10 +97,28 @@ def check_run(run_id: str) -> dict:
         run_id: e.g. "m-eurosat-0003".
     """
     try:
-        c = runs.check(run_id)
+        return ok(_check_text(runs.check(run_id)))
     except EXPECTED as e:
         return error(str(e))
-    p = c["primary"]
+
+
+@tool
+def wait_run(run_id: str, max_minutes: float = 15.0) -> dict:
+    """Wait until a run finishes (or max_minutes pass), then report like check_run. Use this instead of
+    calling check_run repeatedly while a run trains.
+
+    Args:
+        run_id: the running run.
+        max_minutes: how long to wait at most (0.5 to 30).
+    """
+    try:
+        return ok(_check_text(runs.wait(run_id, min(max(float(max_minutes), 0.5), 30.0))))
+    except EXPECTED as e:
+        return error(str(e))
+
+
+def _check_text(c: dict) -> str:
+    run_id, p = c["run_id"], c["primary"]
     lines = [f"{run_id}: {c['status'].upper()}, epoch {c['epoch']}/{c['epochs']}, {c['minutes']:.1f} min"
              + (f", ETA {c['eta_min']} min" if c.get("eta_min") is not None else ""),
              f"Best val {p}: {runs.fmt(p, c['best_val'])} (epoch {c['best_epoch']})"]
@@ -115,7 +133,7 @@ def check_run(run_id: str) -> dict:
         lines.append(f"Error: {c['error']}")
     if c.get("log_tail"):
         lines.append(f"Log tail:\n{c['log_tail']}")
-    return ok("\n".join(lines))
+    return "\n".join(lines)
 
 
 @tool
