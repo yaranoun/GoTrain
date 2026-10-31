@@ -1,0 +1,11 @@
+geobench
+strands-agents
+strands-agents-tools
+torch
+torchvision
+timm
+numpy
+pandas
+matplotlib
+scikit-learn
+boto3

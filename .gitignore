@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.ipynb_checkpoints/
+
+# Data, runs, checkpoints (synced to S3, not git)
+workspace/*
+!workspace/.gitkeep
+data/
+*.pt
+*.ckpt
+*.h5
+
+# Local / private
+*.pdf
+.env
+nohup.out
+logs/
