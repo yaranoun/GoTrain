@@ -100,6 +100,28 @@ def ignore_index(task: str) -> int | None:
     return IGNORE_INDEX.get(task)
 
 
+# Scope features for playbook lessons (CREATIVE_PLAN.md §4.5). A feature that cannot be derived is "unknown".
+SENSOR_FAMILY = {  # sensor -> (sensor family, band family)
+    "sentinel-2": ("s2-multispectral", "multispectral"),
+    "aerial-rgb": ("aerial-rgb", "rgb"),
+    "sentinel-1+2": ("s1+s2", "multispectral"),
+}
+
+
+def gsd_bucket(gsd_m: float | None) -> str:
+    if gsd_m is None:
+        return "unknown"
+    return "<=1m" if gsd_m <= 1 else "(1,10]m" if gsd_m <= 10 else ">10m"
+
+
+def scope(task: str) -> dict:
+    """{task_type, sensor_family, band_family, gsd_bucket}; used to scope and retrieve lessons."""
+    t = info(task)
+    sensor, bands = SENSOR_FAMILY.get(t["sensor"], ("unknown", "unknown"))
+    return {"task_type": t["type"] if t["type"] in ("classification", "segmentation") else "unknown",
+            "sensor_family": sensor, "band_family": bands, "gsd_bucket": gsd_bucket(GSD_M.get(task))}
+
+
 def info(task: str) -> dict:
     if task not in TASKS:
         raise ValueError(f"Unknown task '{task}'. Known: {sorted(TASKS)}")

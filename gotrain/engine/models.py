@@ -7,27 +7,35 @@ from gotrain.engine.tasks import S2_CANONICAL
 # What the agent will see from list_backbones(). "norm" is the input normalization the weights expect.
 ZOO = {
     "resnet18/none": {"in_chans": "any", "norm": "zscore", "img_size": 64, "params_m": 11},
-    "resnet18/imagenet": {"in_chans": "any", "norm": "zscore", "img_size": 64, "params_m": 11},
-    "resnet50/imagenet": {"in_chans": "any", "norm": "zscore", "img_size": 64, "params_m": 23},
-    "convnext_tiny/imagenet": {"in_chans": "any", "norm": "zscore", "img_size": 64, "params_m": 28},
-    "resnet18/ssl4eo_moco": {"in_chans": 13, "bands": S2_CANONICAL, "norm": "div10000", "img_size": 224,
+    "resnet18/imagenet": {"family": "imagenet", "in_chans": "any", "norm": "zscore", "img_size": 64, "params_m": 11},
+    "resnet50/imagenet": {"family": "imagenet", "in_chans": "any", "norm": "zscore", "img_size": 64, "params_m": 23},
+    "convnext_tiny/imagenet": {"family": "imagenet", "in_chans": "any", "norm": "zscore", "img_size": 64, "params_m": 28},
+    "resnet18/ssl4eo_moco": {"family": "eo-pretrained", "in_chans": 13, "bands": S2_CANONICAL, "norm": "div10000", "img_size": 224,
                              "params_m": 11, "notes": "Sentinel-2 L1C self-supervised (SSL4EO-S12 MoCo)"},
-    "resnet50/ssl4eo_moco": {"in_chans": 13, "bands": S2_CANONICAL, "norm": "div10000", "img_size": 224,
+    "resnet50/ssl4eo_moco": {"family": "eo-pretrained", "in_chans": 13, "bands": S2_CANONICAL, "norm": "div10000", "img_size": 224,
                              "params_m": 23, "notes": "Sentinel-2 L1C self-supervised (SSL4EO-S12 MoCo)"},
 }
 
 # Segmentation: the backbone is the encoder of a decoder from segmentation_models_pytorch.
 # img_size None = native resolution (fully convolutional; inputs padded to a multiple of 32).
 SEG_ZOO = {
-    "resnet18/imagenet": {"in_chans": "any", "norm": "zscore", "img_size": None, "params_m": 14},
-    "resnet34/imagenet": {"in_chans": "any", "norm": "zscore", "img_size": None, "params_m": 24},
-    "resnet50/imagenet": {"in_chans": "any", "norm": "zscore", "img_size": None, "params_m": 32},
-    "resnet18/ssl4eo_moco": {"in_chans": 13, "bands": S2_CANONICAL, "norm": "div10000", "img_size": None,
+    "resnet18/imagenet": {"family": "imagenet", "in_chans": "any", "norm": "zscore", "img_size": None, "params_m": 14},
+    "resnet34/imagenet": {"family": "imagenet", "in_chans": "any", "norm": "zscore", "img_size": None, "params_m": 24},
+    "resnet50/imagenet": {"family": "imagenet", "in_chans": "any", "norm": "zscore", "img_size": None, "params_m": 32},
+    "resnet18/ssl4eo_moco": {"family": "eo-pretrained", "in_chans": 13, "bands": S2_CANONICAL, "norm": "div10000", "img_size": None,
                              "params_m": 14, "notes": "Sentinel-2 L1C self-supervised encoder (SSL4EO-S12 MoCo)"},
-    "resnet50/ssl4eo_moco": {"in_chans": 13, "bands": S2_CANONICAL, "norm": "div10000", "img_size": None,
+    "resnet50/ssl4eo_moco": {"family": "eo-pretrained", "in_chans": 13, "bands": S2_CANONICAL, "norm": "div10000", "img_size": None,
                              "params_m": 32, "notes": "Sentinel-2 L1C self-supervised encoder (SSL4EO-S12 MoCo)"},
 }
 DECODERS = {"unet": "Unet", "fpn": "FPN", "deeplabv3plus": "DeepLabV3Plus"}
+
+
+WEIGHTS_FAMILIES = ("scratch", "imagenet", "eo-pretrained")
+
+
+def weights_family(task_type: str, backbone: str, weights: str) -> str:
+    """scratch | imagenet | eo-pretrained: the lesson `context` of a config (for segmentation, the encoder's)."""
+    return zoo_entry(task_type, backbone, weights).get("family", "scratch")
 
 
 def zoo_for(task_type: str) -> dict:

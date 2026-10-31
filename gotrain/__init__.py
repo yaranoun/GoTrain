@@ -9,7 +9,8 @@ DEFAULT_WORKSPACE = REPO / "workspace"
 # GOTRAIN_WORKSPACE points runs, ledger, vault and logs at another folder (a sandbox for tool checks / tests).
 # The data cache is derived data and stays shared. In a sandbox the test split is unreachable: finalize refuses.
 WORKSPACE = Path(os.environ.get("GOTRAIN_WORKSPACE") or DEFAULT_WORKSPACE).resolve()
-CACHE = DEFAULT_WORKSPACE / "cache"
+# GOTRAIN_CACHE: a second checkout (worktree) points this at the main checkout's cache instead of rebuilding it.
+CACHE = Path(os.environ.get("GOTRAIN_CACHE") or DEFAULT_WORKSPACE / "cache").resolve()
 
 
 def is_sandbox() -> bool:

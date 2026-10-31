@@ -24,6 +24,8 @@ and the body lands in Step 7 (mock it in tests until then); **[8]/[9]/[S2]** is 
 STATE_DIR: Path
 class Busy(RuntimeError): ...                      # raised, never waited on
 def gpu_lock(owner: str) -> ContextManager[None]   # flock on STATE_DIR/gpu.lock; held -> Busy(holder info)
+def acquire_gpu(owner: str, **info) -> int         # for subprocesses: Popen(pass_fds=(fd,)), then close fd here
+def set_holder_pid(pid: int) -> None
 def gpu_lock_holder() -> dict | None               # {"owner", "pid", "since", "workspace"} or None
 def test_lines(task: str | None = None) -> list[dict]
 def test_allowed(task: str) -> bool                # False if a non-voided "opened" or "done" line exists
@@ -56,6 +58,10 @@ class Session:
     playbook_readonly: bool    # True for a snapshot and for arm "off"
     dry_run: bool
 
+def pots(B: float) -> dict                       # {"B", "R", "P1", "P2"}
+def start(task, arm, phases, B, playbook_path, playbook_readonly, model, scope, session_id=None,
+          dry_run=False) -> Session              # writes the header, or reopens an existing session id
+def from_header(h: dict) -> Session
 def header(session_id: str) -> dict             # the session_start record
 def completed_phases(session_id: str) -> set[str]
 def off_workspace(task: str) -> Path
@@ -63,8 +69,8 @@ def off_workspace(task: str) -> Path
 
 `WORKSPACE/sessions.jsonl` (append-only):
 - `{"type": "session_start", "session_id", "task", "arm", "phases", "workspace", "B", "R", "P1", "P2",
-  "code_tree", "code_dirty", "prompt_hash", "playbook_hash", "playbook_snapshot", "model", "versions",
-  "scope", "time"}`. Here `code_tree` = `git rev-parse HEAD:gotrain`. `playbook_hash` = sha256 of the playbook
+  "code_tree", "code_dirty", "prompt_hash", "playbook_path", "playbook_readonly", "playbook_hash",
+  "playbook_snapshot", "model", "versions", "scope", "dry_run", "time"}`. Here `code_tree` = `git rev-parse HEAD:gotrain`. `playbook_hash` = sha256 of the playbook
   file at start, or `null` if it is empty or absent. `versions` = `{python, torch, strands-agents, mcp}`.
 - `{"type": "phase_done", "session_id", "phase", "time"}`
 - `{"type": "session_end", "session_id", "time", "tokens": {"inputTokens", "outputTokens", "totalTokens"}, "tool_calls", "wall_min", "error"}`
