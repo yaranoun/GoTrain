@@ -15,4 +15,4 @@ Each item of the brief mapped to its evidence. Numbers come from the vault and `
 | 9 | **Report + dashboard** | all | ✅ rendered from the final data | `report/` (`results.md`, `dashboard.html`, `lesson_flow.png`, `ab_m-SA-crop-type.png`, `sentinel_audit.md`, `trees/`) |
 | 10 | **README** | repo | ✅ results block filled from the report | `README.md` |
 | 11 | **Presentation** | presentation | given at the judging; not stored in the repo | — |
-| 12 | **Submission**: merge `run/chain` into `main`, tag `submission`, push | — | ✅ `main` tagged `submission` (earlier heads kept as `submission-v1`, `-v2`, `-v3`); gotrain 1.0.0 on PyPI (tag `v1.0.0`) | GitHub `yaranoun/GoTrain` |
+| 12 | **Submission**: merge `run/chain` into `main`, tag `submission`, push | — | ✅ `main` tagged `submission` (earlier heads kept as `submission-v1` to `-v4`); gotrain 1.0.0 on PyPI (tag `v1.0.0`) | GitHub `yaranoun/GoTrain` |
