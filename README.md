@@ -383,7 +383,7 @@ arm's (0.0097), so its gate was stricter: ON kept 0 Level 1 runs, OFF kept 2.
 0.895). No model, config or decision was chosen with it. The vault entry was voided and kept verbatim
 (`workspace/vault_incidents.jsonl`), and m-eurosat was finalized once more with a model selected on validation only.
 Its score is reported together with this incident. The fixes are in code: finalize accepts only finished runs, tool
-checks run in a sandbox where finalize refuses, and a machine-wide test registry allows one test touch per dataset.
+checks run in a sandbox where finalize refuses, and a machine-wide test registry allows one test touch per dataset. Older records that say "disclosed in CLAUDE.md" refer to the build notes file, which was removed afterwards; it is in the repository history at the `submission-v1` to `submission-v5` tags.
 
 **INC-002 (m-SA-crop-type).** On 1 Nov at 00:28 UTC, the held-out m-SA-crop-type's one test evaluation was killed by
 the kernel's out-of-memory killer while it loaded the test split into memory. The test registry had already
