@@ -1,0 +1,8 @@
+{
+  "task": "m-eurosat",
+  "backbone": "resnet18",
+  "weights": "ssl4eo_moco",
+  "lr": 0.001,
+  "seed": 1,
+  "time_limit_min": 6.0
+}

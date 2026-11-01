@@ -1,0 +1,30 @@
+{
+ "task": "m-cashew-plant",
+ "mechanism": "ensemble",
+ "members": [
+  {
+   "run_id": "m-cashew-plant-0008",
+   "run_dir": "runs/m-cashew-plant/m-cashew-plant-0008",
+   "tta": true,
+   "checkpoint_sha256": "sha256:7634dc3bf90895b3eb15b14f302dc5a2dffbd075956d1db2868c17ba833793e4"
+  },
+  {
+   "run_id": "m-cashew-plant-0005",
+   "run_dir": "runs/m-cashew-plant/m-cashew-plant-0005",
+   "tta": true,
+   "checkpoint_sha256": "sha256:b033643930133a71962520a3d8ef879461689dc85d3a52494109695ac55a24de"
+  },
+  {
+   "run_id": "m-cashew-plant-0006",
+   "run_dir": "runs/m-cashew-plant/m-cashew-plant-0006",
+   "tta": true,
+   "checkpoint_sha256": "sha256:825dc912cf2ece10fff28a8710b95bf4b5139a15fae96cf17beab10c1ea711dc"
+  },
+  {
+   "run_id": "m-cashew-plant-0012",
+   "run_dir": "runs/m-cashew-plant/m-cashew-plant-0012",
+   "tta": false,
+   "checkpoint_sha256": "sha256:b77c7f24e4818c99121c983fba1822fc08d6d2c713d3d49ccd2c7674475527bc"
+  }
+ ]
+}

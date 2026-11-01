@@ -1,0 +1,6 @@
+run_dir: /home/sagemaker-user/GoTrain/workspace/runs/m-eurosat/m-eurosat-0007
+{"epoch": 22, "train_loss": 0.19769039307925795, "val_accuracy": 0.9, "lr": 0.0008959190136053404, "steps": 682, "elapsed_s": 77.8}
+{"epoch": 44, "train_loss": 0.03383079680540432, "val_accuracy": 0.973, "lr": 0.0006286841099720323, "steps": 682, "elapsed_s": 149.3}
+{"epoch": 66, "train_loss": 0.005260446920029579, "val_accuracy": 0.974, "lr": 0.00030985669926595895, "steps": 682, "elapsed_s": 220.4}
+{"epoch": 88, "train_loss": 0.0014083362471235812, "val_accuracy": 0.987, "lr": 6.871179192935239e-05, "steps": 682, "elapsed_s": 291.6}
+{"epoch": 106, "train_loss": 0.0008663035297114066, "val_accuracy": 0.981, "lr": 1.2219306677607734e-12, "steps": 554, "elapsed_s": 349.6}

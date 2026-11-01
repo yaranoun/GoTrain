@@ -1,0 +1,8 @@
+{
+  "task": "m-pv4ger-seg",
+  "backbone": "resnet50",
+  "decoder": "unet",
+  "epochs": 8,
+  "weights": "imagenet",
+  "time_limit_min": 6.0
+}

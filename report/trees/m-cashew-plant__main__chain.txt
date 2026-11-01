@@ -1,0 +1,13 @@
+- m-cashew-plant-0002 [train, first] resnet34/imagenet lr 0.0005: val 0.6777
+  - m-cashew-plant-0003 [seed_repeat, seed_repeat] resnet34/imagenet lr 0.0005: val 0.7446
+  - m-cashew-plant-0004 [train, kept] resnet18/ssl4eo_moco lr 0.0005: val 0.8177
+    - m-cashew-plant-0005 [train, within_noise] resnet18/ssl4eo_moco lr 0.001: val 0.8331
+      - m-cashew-plant-0006 [train, within_noise] resnet50/ssl4eo_moco lr 0.001: val 0.8260
+        - m-cashew-plant-L2-003 [level2, level2] tta of m-cashew-plant-0006: val 0.8602
+      - m-cashew-plant-0007 [train, within_noise] resnet18/ssl4eo_moco lr 0.001: val 0.7542
+      - m-cashew-plant-0008 [train, within_noise] resnet18/ssl4eo_moco lr 0.002: val 0.8458
+        - m-cashew-plant-L2-001 [level2, level2] tta of m-cashew-plant-0008: val 0.8730
+        - m-cashew-plant-0012 [level2, level2] resnet18/ssl4eo_moco lr 0.002: val 0.8473
+        - m-cashew-plant-L2-004 [level2, level2] ensemble of m-cashew-plant-0008, m-cashew-plant-0005, m-cashew-plant-0006: val 0.8729
+        - m-cashew-plant-L2-006 [level2, level2] ensemble of m-cashew-plant-0008, m-cashew-plant-0005, m-cashew-plant-0006, m-cashew-plant-0012: val 0.8726
+      - m-cashew-plant-L2-002 [level2, level2] tta of m-cashew-plant-0005: val 0.8694

@@ -1,0 +1,13 @@
+- m-brick-kiln-0002 [train, first] resnet18/imagenet lr 0.001: val 98.60%
+  - m-brick-kiln-0003 [seed_repeat, seed_repeat] resnet18/imagenet lr 0.001: val 98.90%
+  - m-brick-kiln-0004 [train, within_noise] resnet18/ssl4eo_moco lr 0.001: val 99.10%
+    - m-brick-kiln-0005 [train, within_noise] resnet18/ssl4eo_moco lr 0.0003: val 99.30%
+      - m-brick-kiln-0006 [train, within_noise] resnet50/ssl4eo_moco lr 0.0003: val 99.00%
+      - m-brick-kiln-0007 [train, within_noise] resnet18/ssl4eo_moco lr 0.0003: val 99.30%
+        - m-brick-kiln-L2-002 [level2, level2] tta of m-brick-kiln-0007: val 99.10%
+      - m-brick-kiln-0008 [train, within_noise] resnet18/ssl4eo_moco lr 0.0003: val 99.20%
+        - m-brick-kiln-L2-003 [level2, level2] tta of m-brick-kiln-0008: val 99.20%
+      - m-brick-kiln-L2-001 [level2, level2] tta of m-brick-kiln-0005: val 99.20%
+      - m-brick-kiln-0012 [level2, level2] resnet18/ssl4eo_moco lr 0.0003: val 99.30%
+      - m-brick-kiln-L2-004 [level2, level2] ensemble of m-brick-kiln-0005, m-brick-kiln-0007, m-brick-kiln-0008: val 99.30%
+      - m-brick-kiln-L2-006 [level2, level2] ensemble of m-brick-kiln-0005, m-brick-kiln-0007, m-brick-kiln-0008, m-brick-kiln-0012: val 99.30%

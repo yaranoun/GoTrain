@@ -1,0 +1,7 @@
+{
+  "task": "m-cashew-plant",
+  "backbone": "resnet18",
+  "decoder": "unet",
+  "weights": "ssl4eo_moco",
+  "time_limit_min": 6.0
+}

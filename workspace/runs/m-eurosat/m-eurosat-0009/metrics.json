@@ -1,0 +1,19 @@
+{
+  "primary": "accuracy",
+  "val": {
+    "accuracy": 0.987
+  },
+  "val_best_epoch_inmemory": 0.987,
+  "best_epoch": 36,
+  "epochs_run": 42,
+  "val_passes": 5,
+  "steps": 1294,
+  "train_loss_final": 0.005495974814958787,
+  "gpu_minutes": 5.82,
+  "startup_s": 7.0,
+  "val_pass_s": 1.6,
+  "stopped_by": "time",
+  "stopped_early": "run cap 6.0 min",
+  "lr_final_fraction": 0.0,
+  "val_stats_sha256": "sha256:3f419703d9b68f28ab03c85db4c36927bec99020e91ff2f5fe93432fcbf2e9ec"
+}

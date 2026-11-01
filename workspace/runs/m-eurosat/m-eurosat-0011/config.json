@@ -1,0 +1,8 @@
+{
+  "task": "m-eurosat",
+  "backbone": "resnet18",
+  "weights": "imagenet",
+  "label_smoothing": 0.1,
+  "lr": 0.0003,
+  "time_limit_min": 6.0
+}

@@ -1,0 +1,23 @@
+{
+  "task": "m-SA-crop-type",
+  "backbone": "resnet34",
+  "weights": "imagenet",
+  "decoder": "unet",
+  "norm": "zscore",
+  "img_size": null,
+  "augment": [
+    "d4"
+  ],
+  "optimizer": "adamw",
+  "lr": 0.0005,
+  "weight_decay": 0.05,
+  "batch_size": 16,
+  "epochs": 20,
+  "warmup_epochs": 1,
+  "label_smoothing": 0.0,
+  "freeze_backbone": false,
+  "train_fraction": 1.0,
+  "seed": 0,
+  "time_limit_min": 6.0,
+  "band_fill": null
+}

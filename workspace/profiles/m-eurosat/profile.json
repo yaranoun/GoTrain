@@ -160,5 +160,5 @@
     "/home/sagemaker-user/GoTrain/workspace/profiles/m-eurosat/samples_false_color.png",
     "/home/sagemaker-user/GoTrain/workspace/profiles/m-eurosat/samples_ndvi.png"
   ],
-  "agent_notes": ""
+  "agent_notes": "EuroSAT 13-band S2, 64px, balanced 10 classes, 2000 train. Hard pairs: Annual/Permanent Crop/Pasture/Herbaceous, Highway/River, Residential/Industrial. SWIR/NIR bands useful. Small data -> pretrained + d4 aug."
 }

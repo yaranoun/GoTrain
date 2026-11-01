@@ -1,0 +1,24 @@
+{
+ "task": "m-SA-crop-type",
+ "mechanism": "ensemble",
+ "members": [
+  {
+   "run_id": "m-SA-crop-type-0007",
+   "run_dir": "runs/m-SA-crop-type/m-SA-crop-type-0007",
+   "tta": true,
+   "checkpoint_sha256": "sha256:b71b54adfce6d949da0ce61aa6946b58e97e7c30ef16783593760f22fd25284c"
+  },
+  {
+   "run_id": "m-SA-crop-type-0006",
+   "run_dir": "runs/m-SA-crop-type/m-SA-crop-type-0006",
+   "tta": true,
+   "checkpoint_sha256": "sha256:48f7ac7b7a079f4ed7b5e7f2eff6675972c8b22d7c9ba2bed18dd1a4e7432976"
+  },
+  {
+   "run_id": "m-SA-crop-type-0001",
+   "run_dir": "runs/m-SA-crop-type/m-SA-crop-type-0001",
+   "tta": true,
+   "checkpoint_sha256": "sha256:e4a241867bc255d63630b9341ab631c5643fcd332e3cf1e2c1e440c73e5ece8d"
+  }
+ ]
+}

@@ -1,0 +1,5 @@
+run_dir: /home/sagemaker-user/GoTrain/workspace/runs/m-pv4ger-seg/m-pv4ger-seg-0002
+{"epoch": 2, "train_loss": 0.387075336859188, "val_miou": 0.9089030871212096, "lr": 0.0004449138141001372, "steps": 374, "elapsed_s": 82.5}
+{"epoch": 4, "train_loss": 0.12822647903732118, "val_miou": 0.9430784995738799, "lr": 0.000305761372502212, "steps": 374, "elapsed_s": 154.2}
+{"epoch": 7, "train_loss": 0.09339085092465933, "val_miou": 0.9483636401236428, "lr": 8.386669104009909e-05, "steps": 561, "elapsed_s": 257.3}
+{"epoch": 10, "train_loss": 0.07657969134925592, "val_miou": 0.9509701830047158, "lr": 1.7751940403765155e-10, "steps": 495, "elapsed_s": 348.5}
