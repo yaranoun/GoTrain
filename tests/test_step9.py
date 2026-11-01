@@ -39,16 +39,23 @@ def test_no_tracked_ledger_has_a_held_out_row():
     """Before the chain: no record of a held-out task anywhere. After the chain was merged into main (1 Nov), held-out
     records may exist only inside the chain's own sessions (<task>__<arm>__chain), never in a manual or sandbox run."""
     files = subprocess.run(["git", "ls-files", "*.jsonl"], cwd=REPO, capture_output=True, text=True).stdout.split()
+    led = (REPO / "workspace" / "ledger.jsonl").read_text().splitlines()
+    chain_runs = {r["run_id"] for r in map(json.loads, filter(str.strip, led))
+                  if str(r.get("session_id") or "").endswith("__chain")}
     for f in files:
         for line in (REPO / f).read_text().splitlines():
             if line.strip():
                 rec = json.loads(line)
                 if rec.get("task") not in HELD_OUT:
                     continue
-                if f == "workspace/vault_incidents.jsonl":   # INC-002, the disclosed incident about the chain's test touch
+                if f == "workspace/vault.jsonl":             # a vault entry (no session_id): its run is a chain session's
+                    assert rec.get("run_id") in chain_runs, (f, rec.get("run_id"))
+                elif f == "workspace/vault_incidents.jsonl":   # INC-002, the disclosed incident about the chain's test touch
                     assert rec.get("incident_id"), (f, rec)
-                elif f == "workspace/test_registry.jsonl":   # the chain's own test-split guard record
-                    assert rec.get("checkout") == "/home/sagemaker-user/GoTrain", (f, rec.get("run_id"))
+                elif f == "workspace/test_registry.jsonl":   # the chain's own test-split guard records: the chain
+                    # checkout, and the clone the 6th dataset's session (m-nz-cattle, 1 Nov) ran and finalized in
+                    assert rec.get("checkout") in ("/home/sagemaker-user/GoTrain", "/home/sagemaker-user/GoTrain-nz"), \
+                        (f, rec.get("run_id"))
                 else:
                     sid = rec.get("session_id") or ""
                     assert sid.endswith("__chain"), (f, rec.get("run_id") or sid)
