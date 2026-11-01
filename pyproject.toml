@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gotrain"
-version = "0.1.0"
+version = "1.0.0"
 description = "An agent that trains Earth-observation models on GEO-Bench tasks on its own, served over MCP"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -26,8 +26,12 @@ dependencies = [
     "boto3",
 ]
 
+[project.urls]
+Repository = "https://github.com/yaranoun/GoTrain"
+Documentation = "https://github.com/yaranoun/GoTrain/blob/main/docs/MCP.md"
+
 [project.scripts]
-gotrain-mcp = "gotrain.mcp_server:main"
+gotrain-mcp = "gotrain.mcp_cli:main"
 
 [tool.setuptools.packages.find]
 include = ["gotrain*"]

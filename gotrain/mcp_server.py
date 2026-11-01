@@ -55,10 +55,11 @@ from mcp.server.fastmcp import FastMCP, Image
 from mcp.types import CallToolResult, TextContent, ToolAnnotations
 
 import gotrain
-from gotrain import REPO, jobs, mcp_ops, state
+from gotrain import REPO, jobs, mcp_config, mcp_ops, state
 
 OPERATOR = os.environ.get("GOTRAIN_MCP_OPERATOR") == "1"
-TEXT_CAP = int(os.environ.get("GOTRAIN_MCP_TEXT_CAP") or 6000)
+_CAP_ENV = os.environ.get("GOTRAIN_MCP_TEXT_CAP") or "6000"
+TEXT_CAP = int(_CAP_ENV) if _CAP_ENV.isdigit() else 6000  # a bad value is refused at import (mcp_config.check)
 OPERATOR_TOOLS = ("finalize", "registry_sync", "promote", "archive", "store_push")
 WORKSPACES = ("results", "sandbox")
 CHILD_TIMEOUT_S = 300
@@ -95,18 +96,13 @@ if OPERATOR:
 def _check_workspaces() -> None:
     """The sandbox (job) workspace must be its own folder: never the results or main workspace, inside one, or a
     parent of one. Otherwise sandbox writes (views, reports, predictions, jobs) would land in published results."""
-    sandbox = jobs.JOB_WS.resolve()
-    wss = (("results", gotrain.WORKSPACE.resolve()), ("main", jobs.main_workspace()),
-           ("default", gotrain.DEFAULT_WORKSPACE.resolve()))
-    for name, ws in wss:
-        if sandbox == ws or ws in sandbox.parents or sandbox in ws.parents:
-            raise RuntimeError(f"the MCP sandbox workspace {sandbox} overlaps the {name} workspace {ws}: set "
-                               f"GOTRAIN_MCP_WORKSPACE to a separate folder")
-    for name, ws in wss:  # training logs go to <workspace>/../logs, run ids are numbered per workspace
-        if sandbox.parent == ws.parent:
-            raise RuntimeError(f"the MCP sandbox workspace {sandbox} sits next to the {name} workspace {ws}: both "
-                               f"would write training logs to {ws.parent / 'logs'}; set GOTRAIN_MCP_WORKSPACE to a "
-                               f"folder with its own parent (e.g. <somewhere>/mcp/workspace)")
+    why = mcp_config.workspace_conflict(jobs.JOB_WS, [("results", gotrain.WORKSPACE), ("main", jobs.main_workspace()),
+                                                      ("default", gotrain.DEFAULT_WORKSPACE)])
+    if why:
+        raise RuntimeError(why)
+    problems = [p for p in mcp_config.check(exists=False, fill_defaults=False) if "sandbox workspace" not in p]
+    if problems:
+        raise RuntimeError("; ".join(problems))
 
 
 _check_workspaces()
@@ -119,6 +115,7 @@ async def _lifespan(_server):
 
 
 mcp = FastMCP("gotrain", instructions=INSTRUCTIONS, lifespan=_lifespan)
+mcp._mcp_server.version = mcp_config.version()  # serverInfo.version in initialize (FastMCP takes no version)
 
 
 # --------------------------------------------------------------------------- plumbing

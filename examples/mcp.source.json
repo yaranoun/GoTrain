@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "gotrain": {
+      "command": "python",
+      "args": ["-m", "gotrain.mcp_cli"],
+      "cwd": "/path/to/GoTrain",
+      "env": {
+        "PYTHONPATH": "/path/to/GoTrain"
+      }
+    }
+  }
+}

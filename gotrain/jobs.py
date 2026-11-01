@@ -40,9 +40,9 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-from gotrain import DEFAULT_WORKSPACE, REPO, state
+from gotrain import DEFAULT_WORKSPACE, REPO, mcp_config, state
 
-JOB_WS = Path(os.environ.get("GOTRAIN_MCP_WORKSPACE") or REPO / ".sandbox" / "mcp" / "workspace").resolve()
+JOB_WS = Path(os.environ.get("GOTRAIN_MCP_WORKSPACE") or mcp_config.default_sandbox()).expanduser().resolve()
 JOBS = JOB_WS / "jobs"
 STATUSES = ("running", "done", "failed", "cancelled", "lost")
 MANUAL_STAGES = ("screen", "train")  # stages a manual (MCP) run may use; seed repeats and Level 2 stay the harness's
