@@ -145,9 +145,19 @@ npx @modelcontextprotocol/inspector gotrain-mcp
 - **Release.** Bump `version` in `pyproject.toml`, merge to `main`, then tag that commit and push the tag:
   `git tag -a v1.0.0 -m "GoTrain 1.0.0" && git push origin v1.0.0`. Clients pin it with
   `pip install "git+https://github.com/yaranoun/GoTrain.git@v1.0.0"`. A tag is never moved; a fix is a new version.
+- **PyPI.** `scripts/build_release.sh` builds the committed `HEAD` (via `git archive`, so no untracked or ignored
+  file can get in) in a clean virtualenv: the sdist, then the wheel built from that sdist, into `dist/`. It runs
+  `twine check --strict` and `scripts/check_dist.py`, which fails on any file outside the package, README, LICENSE
+  and pyproject (no workspace, data, caches, sandbox, tests, logs or checkpoints), on anything that looks like a
+  credential, on wrong metadata (name, version, MIT license, project URLs, no direct-URL dependency), and on a README
+  that does not render as the PyPI page. Then it installs the wheel in a fresh virtualenv outside the repository and
+  runs `gotrain-mcp --version`, `gotrain-mcp --check` and one MCP client call over stdio. CPU only; it never uploads.
+  The maintainer uploads with their own PyPI token, from their own terminal:
+  `python -m twine upload dist/gotrain-<version>.tar.gz dist/gotrain-<version>-py3-none-any.whl`. PyPI accepts each
+  version once: a fix is a new version. The PyPI page shows the README as it was at the build.
 - **CI.** `ci/github-actions-tests.yml` is a GitHub Actions workflow for every push (except the chain's `run/**`
   results branches) and pull request: CPU torch, `pip install -e . pytest`, `gotrain-mcp --check`, then
-  `python -m pytest -q tests/` (synthetic data; no GPU, no test split; 207 passed with no local cache). To switch it
+  `python -m pytest -q tests/` (synthetic data; no GPU, no test split; 216 passed). To switch it
   on, copy it to `.github/workflows/tests.yml` and push with a token that has the `workflow` scope (or add the file in
   the GitHub web UI): the hackathon token cannot create workflow files.
 - **Docker** (optional). `Dockerfile`: CPU, `gotrain-mcp --http --host 0.0.0.0 --port 8765`, everything under the
