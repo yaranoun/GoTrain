@@ -638,3 +638,51 @@ noise: ok (6 decision runs, sigma_seed recorded)
 pot: ok (P1 used 39.93/45, P2 used 0.00/15, 0 screens)
 2026-11-01T00:16:32Z done: verify m-SA-crop-type off
 2026-11-01T00:16:32Z start: commit m-SA-crop-type OFF level1
+2026-11-01T00:16:32Z committed: chain: m-SA-crop-type OFF level1
+2026-11-01T00:16:32Z committed: chain: m-SA-crop-type OFF level1
+2026-11-01T00:16:34Z done: commit m-SA-crop-type OFF level1
+2026-11-01T00:16:34Z start: session m-SA-crop-type main level2,finalize
+Session m-SA-crop-type__main__chain · arm main · B 60.0 (R 6.0, P1 45.0, P2 15.0) · workspace /home/sagemaker-user/GoTrain/workspace
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/sagemaker-user/GoTrain/gotrain/run.py", line 398, in <module>
+    main()
+  File "/home/sagemaker-user/GoTrain/gotrain/run.py", line 366, in main
+    summary = level2.run(session, log=lambda m: print(m, flush=True))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/sagemaker-user/GoTrain/gotrain/level2.py", line 187, in run
+    with state.gpu_lock(f"level2:{task}", session_id=sid, workspace=str(WORKSPACE)):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/conda/lib/python3.12/contextlib.py", line 137, in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+  File "/home/sagemaker-user/GoTrain/gotrain/state.py", line 100, in gpu_lock
+    fd = acquire_gpu(owner, **info)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/sagemaker-user/GoTrain/gotrain/state.py", line 68, in acquire_gpu
+    raise Busy("the GPU is busy (one GPU job at a time, machine-wide)"
+gotrain.state.Busy: the GPU is busy (one GPU job at a time, machine-wide): held by off:m-SA-crop-type since 2026-11-01T00:09:58Z
+2026-11-01T00:16:43Z FAILED: session m-SA-crop-type main level2,finalize -> PAUSE set (harness failure; fix, rm PAUSE, rerun)
+2026-11-01T00:17:53Z chain start (pid 179835)
+2026-11-01T00:17:53Z start: session m-SA-crop-type main level2,finalize
+Session m-SA-crop-type__main__chain · arm main · B 60.0 (R 6.0, P1 45.0, P2 15.0) · workspace /home/sagemaker-user/GoTrain/workspace
+[level2] TTA gate m-SA-crop-type-0007: z +2.46 -> keep
+[level2] TTA gate m-SA-crop-type-0006: z +3.94 -> keep
+[level2] TTA gate m-SA-crop-type-0001: z +2.19 -> keep
+[level2] ensemble m-SA-crop-type-L2-004: z +6.02 vs m-SA-crop-type-L2-003 -> promoted
+[level2] trained slot m-SA-crop-type-0012: done
+[level2] ensemble+slot m-SA-crop-type-L2-006: z +2.36 vs m-SA-crop-type-L2-004 -> promoted
+[finalize] transcript: /home/sagemaker-user/GoTrain/workspace/agent_logs/m-SA-crop-type__main__chain.finalize.jsonl
+
+Tool #1: get_budget
+
+Tool #2: query_ledger
+
+Tool #3: finalize
+Building cache for m-SA-crop-type/test (one time)...
+scripts/chain.sh: line 48: 179873 Killed                  python -m gotrain.run --task "$task" --arm "$arm" --phases "$phases" --session-id "${task}__${arm}__chain" "$@"
+2026-11-01T00:28:02Z FAILED: session m-SA-crop-type main level2,finalize -> PAUSE set (harness failure; fix, rm PAUSE, rerun)
+2026-11-01T06:35:06Z operator: marked 'session m-SA-crop-type main level2,finalize' done by hand (finalize killed by OOM after 'opened'; INC-002; operator decision: SA-crop stays without a test score)
+2026-11-01T06:35:06Z chain start (pid 256418)
+2026-11-01T06:35:06Z start: commit m-SA-crop-type level2 + finalize
