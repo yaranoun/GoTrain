@@ -57,6 +57,25 @@ only. Its score is reported together with this incident. The fixes are in code: 
 runs, tool checks run in a sandbox where finalize refuses, and a machine-wide test registry allows one test touch
 per dataset.
 
+**Disclosed incident (INC-002).** On 1 Nov at 00:28 UTC, the held-out m-SA-crop-type's one test evaluation was
+killed by the kernel's out-of-memory killer while it loaded the test split into memory. The test registry had
+already recorded `opened`, by design before any test data is read. No prediction, metric or `test_stats.npz` was
+produced, and there is no vault entry. By our own rule an `opened` line without `done` uses up the dataset's one test
+touch, so `final_test` refuses m-SA-crop-type, and we report it without a test score: the guard held even against
+us (`workspace/vault_incidents.jsonl`). Its with/without-playbook result uses the validation split only, by
+protocol, so it is unaffected.
+
+**How to read the results.**
+- With vs without the playbook: the ON arm started 3.7 points higher (first run, from the playbook's confirmed SSL4EO
+  lesson) and stayed ahead on the pre-registered primary metric (+0.007 AUC). The OFF arm found the same weights by
+  its third run and ended 0.4 points higher. Every difference is inside 2σ (σ_AB ≈ 0.05): one paired run suggests,
+  it does not prove.
+- m-cashew-plant's test split is 50 images from only 2 locations, so its 95% interval is not meaningful. Its
+  400-image validation split is the steadier signal.
+- Operational note: at 00:16 UTC a finished training process crashed at exit and held the GPU lock while writing a
+  core dump. The chain paused itself; the process was stopped and a reaper was added (`logs/reaper.log`). No result
+  was affected.
+
 ## Quickstart
 
 ```bash
