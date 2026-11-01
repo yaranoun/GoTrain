@@ -23,7 +23,7 @@ agent and one dataset-agnostic system prompt: Claude Sonnet on Amazon Bedrock (`
 SageMaker GPU instance. Shipped as a Python package (`pip install gotrain`) and as an MCP server that any MCP client
 can call, including a host assistant such as GoPilot, RASID's geospatial AI assistant.
 
-**At a glance.** Five GEO-Bench datasets trained by the agent under the same 60 GPU-minute budget each. Four were
+**At a glance.** Six GEO-Bench datasets trained by the agent under the same 60 GPU-minute budget each. Five were
 tested by code, each with one test evaluation of the model selected on validation (m-eurosat also has one earlier,
 voided evaluation, disclosed as [INC-001](#disclosed-incidents)):
 
@@ -34,13 +34,14 @@ voided evaluation, disclosed as [INC-001](#disclosed-incidents)):
 | m-pv4ger-seg | segmentation, solar panels | mIoU 0.9505 (0.9418–0.9579) | one model with test-time augmentation |
 | m-cashew-plant | segmentation, plantations | mIoU 0.8729 (2 test locations: interval not meaningful) | ensemble of 3, each with test-time augmentation |
 | m-SA-crop-type | segmentation, held out | no test score ([INC-002](#disclosed-incidents)); Level 2 val mIoU 0.4145 | none: code selected an ensemble of 4 on validation; its one test evaluation was killed |
+| m-nz-cattle | segmentation, cattle in aerial RGB | mIoU 0.8531 (0.8450–0.8615) | ensemble of 3, each with test-time augmentation |
 
 m-eurosat and m-brick-kiln each made 14 test errors (986/1000 and 985/999), hence the same cell.
 
 On a held-out dataset, run once with and once without the playbook, the playbook's opening config gave the agent a
 stronger first run (val mIoU 0.382 vs 0.345) and the lead for the first 28.7 of 45 GPU minutes; by the end of Level 1
 both arms were within noise of each other (0.402 vs 0.407): one paired run, suggestive, not proof
-([details](#with-vs-without-the-playbook)). GoTrain also ships a versioned model registry (`<task>:vN`, four models
+([details](#with-vs-without-the-playbook)). GoTrain also ships a versioned model registry (`<task>:vN`, five models
 in production) with code-written model cards, an artifact store (the file system in use, an S3 backend behind the
 same interface), and an MCP server with 27 tools ([Production layer](#production-layer), [MCP server](#mcp-server)).
 
@@ -119,22 +120,24 @@ evaluation is [INC-001](#disclosed-incidents)), with a 95% grouped bootstrap int
 | m-pv4ger-seg | mIoU | 0.9510 | 0.9518 | 0.9556 | 0.9505 (0.9418–0.9579) | 0.9408 (ResNet18-U-Net-timm) |
 | m-cashew-plant | mIoU | 0.6777 | 0.8458 | 0.8729 | 0.8729 | 0.4873 (ResNet50-U-Net-timm) |
 | m-SA-crop-type | mIoU | 0.3820 | 0.4023 | 0.4145 | no test score (INC-002) | 0.3041 (ResNet101 DeepLabV3-timm) |
+| m-nz-cattle | mIoU | 0.8538 | 0.8550 | 0.8583 | 0.8531 (0.8450–0.8615) | 0.8107 (ResNet50-U-Net-timm) |
 
 Each baseline is the best mean test score in GEO-Bench's published baseline results, averaged over seeds (12; 7 on
 m-SA-crop-type) and trained on the full training partition (`gotrain/baselines.json`, from ServiceNow/geo-bench at
 commit 17cac9b). It is a test score, so read it against the Test column; First run, Best Level 1 and Level 2 are
 validation. Those baselines all use 3-channel input, while GoTrain uses every Sentinel-2 band each dataset ships (13
 on m-eurosat, 10 on m-brick-kiln, 12 on m-cashew-plant and m-SA-crop-type), so GoTrain's input differs from the
-baseline's on every dataset except m-pv4ger-seg, which is RGB aerial imagery in both. The baselines were computed on
-earlier GEO-Bench releases (classification v0.8.5, segmentation v0.4) than the v1.0 used here, and on
-m-cashew-plant and m-SA-crop-type GoTrain leaves class 0 ("no data") out of its mIoU while the baselines count it.
-That makes m-pv4ger-seg the closest like-for-like case: its test mIoU of 0.9505 is above the 0.9408 baseline, with
-the whole 95% interval above it. m-cashew-plant's test split covers only 2 locations, so its interval is left out.
-The baselines are never shown to the agent.
+baseline's on every dataset except m-pv4ger-seg and m-nz-cattle, which are RGB aerial imagery in both. The baselines
+were computed on earlier GEO-Bench releases (classification v0.8.5, segmentation v0.4) than the v1.0 used here, and on
+m-cashew-plant and m-SA-crop-type GoTrain leaves class 0 ("no data") out of its mIoU while the baselines count it (on
+m-nz-cattle both count it). That makes m-pv4ger-seg and m-nz-cattle the closest like-for-like cases: m-pv4ger-seg's
+test mIoU of 0.9505 is above the 0.9408 baseline and m-nz-cattle's 0.8531 is above the 0.8107 baseline, in both
+cases with the whole 95% interval above it. m-cashew-plant's test split covers only 2 locations, so its interval is
+left out. The baselines are never shown to the agent.
 
-*Best Level 1* is the highest validation score any Level 1 run reached. Only one Level 1 change cleared the z ≥ 2
-noise gate in the main chain (m-cashew-plant-0004, z = +2.08), so on the other datasets the incumbent was still the
-first run when Level 2 built its models from the top three Level 1 runs. In the tables below, Level 1 z is measured
+*Best Level 1* is the highest validation score any Level 1 run reached. Only m-cashew-plant-0004 cleared the z ≥ 2
+noise gate in Level 1 ([Findings](#findings)), so on the other datasets the incumbent was still the first run when Level 2 built its
+models from the top three Level 1 runs. In the tables below, Level 1 z is measured
 against the incumbent, a TTA z against the same model without TTA, and an ensemble z against the incumbent at that
 moment.
 
@@ -255,8 +258,29 @@ Same dataset, playbook off (the A/B arm; Level 1 only, validation only; a separa
 
 </details>
 
+<details>
+<summary><b>m-nz-cattle</b>: every run, in order</summary>
+
+| Run | Change tried | Val | Kept? |
+|---|---|---|---|
+| m-nz-cattle-0001 | first run: U-Net, ResNet34, ImageNet weights, lr 5e-4 (the defaults: no lesson applied) | 0.8538 | first run, incumbent |
+| m-nz-cattle-0002 | seed repeat of 0001 (harness) | 0.8544 | noise measurement (σ_seed 0.00051) |
+| m-nz-cattle-0003 | ResNet50 | 0.8537 | within noise (z −0.10) |
+| m-nz-cattle-0004 | ResNet18 | 0.8533 | within noise (z −0.50) |
+| m-nz-cattle-0005 | input upsampled from 500 px to 768 px (from 0004) | 0.8543 | within noise (z +0.63); became lesson L006 |
+| m-nz-cattle-0006 | lr 5e-4 → 1e-3 (from 0004; a re-test of L003) | 0.8550 | within noise (z +1.22) |
+| m-nz-cattle-0007 | DeepLabV3+ decoder (from 0006; recorded as a re-test of L004) | 0.8505 | **regressed** (z −3.70) |
+| m-nz-cattle-L2-001 | TTA on 0006 | 0.8579 | TTA kept (z +4.63) |
+| m-nz-cattle-L2-002 | TTA on 0005 | 0.8568 | TTA kept (z +5.64) |
+| m-nz-cattle-L2-003 | TTA on 0001, the incumbent | 0.8558 | TTA kept (z +4.18); **promoted** |
+| m-nz-cattle-L2-004 | ensemble of 0006, 0005, 0001, each with TTA | 0.8583 | **promoted** (z +5.26 vs L2-003); the tested model |
+| m-nz-cattle-0012 | trained slot: 0006's recipe, new seed | 0.8556 | ensemble member |
+| m-nz-cattle-L2-006 | ensemble of the three + 0012 | 0.8581 | not promoted (z −0.91 vs L2-004) |
+
+</details>
+
 Sources: `workspace/ledger.jsonl` (last row per run), `report/trees/<task>__main__chain.txt`, `report/level2.md`,
-the `[level2]` lines in `logs/chain.log`, and for the OFF arm
+the `[level2]` lines in `logs/chain.log` (for m-nz-cattle, in `logs/nz-cattle.log`), and for the OFF arm
 `experiments/playbook-ab/m-SA-crop-type/off/workspace/ledger.jsonl`. Run ids are numbered from the number of runs the
 task already has in the ledger, Level 2 composites and the trained slot included, so the numbers have gaps (and no
 L2-005). m-brick-kiln, m-pv4ger-seg and m-cashew-plant start at 0002 because a run folder 0001 from an earlier manual
@@ -345,6 +369,11 @@ arm's (0.0097), so its gate was stricter: ON kept 0 Level 1 runs, OFF kept 2.
 - Operational note: at 00:16 UTC the m-SA-crop-type Level 2 step was refused because the OFF arm's last training
   process still held the GPU lock (`logs/chain.log`). The chain paused itself, the process was stopped, a reaper was
   started (`logs/reaper.log`, 00:17:47 UTC), and the chain resumed at 00:17:53 UTC. No result was affected.
+- m-nz-cattle, the 6th dataset, ran after the chain had finished, on 1 Nov, in a separate clone (arm main, B = 60,
+  same prompt, a later code tree; logs `logs/nz-cattle*.log` rather than `logs/chain.log`): Level 1, reflect and Level 2 from
+  10:32 to 11:21 UTC, and its one finalize at 12:20 UTC as a separate invocation; its session id is still
+  `m-nz-cattle__main__chain`, so the `<task>__main__chain` paths in this README cover it. It started from the playbook the
+  first five datasets left (lessons L001–L005).
 
 ### Disclosed incidents
 
@@ -397,7 +426,7 @@ running order of one session is:
 **profile → read playbook → compose the first config A → seed repeat A′ (harness) → re-test A⁻ / A⁺ → Level 1 tree
 → reflect (write lessons) → Level 2 → finalize once → publish.**
 
-![Lesson flow: where each lesson was born, applied, confirmed or left inconclusive across the five datasets](https://raw.githubusercontent.com/yaranoun/GoTrain/main/report/lesson_flow.png)
+![Lesson flow: where each lesson was born, applied, confirmed or left inconclusive across the six datasets](https://raw.githubusercontent.com/yaranoun/GoTrain/main/report/lesson_flow.png)
 
 ### One dataset session
 
@@ -767,9 +796,9 @@ The demo calls `list_tasks` → `get_model_card` → `predict` on `val:0` → `s
 → `start_session` as a dry run → `wait_job` → `list_sessions` and `show_tree` in the sandbox. `--ask` runs a Strands
 agent on Bedrock with the read-only tools only.
 
-**What was exercised.** The read, job-control, report and store tools and `predict` on the CPU are ok on CPU, and
+**What was exercised.** The read, job-control, report and store tools and `predict` work on a CPU, and
 the refusals of the GPU and operator tools are checked on CPU. On the GPU, on m-nz-cattle (1 Nov, sandbox, a tool check rather than
-a reported result): `build_cache` built the train and val caches in 10.5 s; `launch_run` trained `m-nz-cattle-0001`
+a reported result, separate from the arm-main m-nz-cattle results above): `build_cache` built the train and val caches in 10.5 s; `launch_run` trained `m-nz-cattle-0001`
 to val mIoU 0.780; `evaluate_run` gave mIoU 0.780; `predict` with `device="cuda"` returned a mask and overlay; a
 real `start_session` (arm dev, B 3, level1) ran 9 runs and exited 0. `finalize` was tested only for its refusals:
 its real call is each task's single test touch. The authoritative table:
@@ -809,38 +838,49 @@ its real call is each task's single test touch. The authoritative table:
 
 ## Findings
 
-**Seed noise swamps single knob changes.** Only 1 of 25 non-first Level 1 decision runs in the main chain cleared
-z ≥ 2 (m-cashew-plant-0004, the L001 re-test, 0.6777 → 0.8177). Everything else was within noise. On the three
-datasets near their ceiling the gains were smaller than the noise; on m-SA-crop-type the seed noise itself was large
-(0.049). The
-measured seed noise ranged from 0.00015 (m-pv4ger-seg) to 0.0669 (m-cashew-plant). The gate is strict by design: it
+**Seed noise swamps single knob changes.** Only 1 of 30 non-first Level 1 decision runs across the six main sessions
+cleared z ≥ 2 (m-cashew-plant-0004, the L001 re-test, 0.6777 → 0.8177), and only one regressed at z ≤ −2
+(m-nz-cattle-0007, DeepLabV3+ in place of U-Net, z −3.70). Everything else was within noise. On the three
+datasets near their ceiling the gains were smaller than the noise; on m-nz-cattle every Level 1 run stayed within
+0.005 mIoU of the others (0.8505–0.8550); on m-SA-crop-type the seed noise itself was large (0.049). The measured seed noise ranged
+from 0.00015 (m-pv4ger-seg) to 0.0669 (m-cashew-plant), with m-nz-cattle at 0.00051. The gate is strict by design: it
 is what keeps a lucky seed out of the playbook.
 
 **SSL4EO weights for Sentinel-2, ImageNet for aerial RGB.** On the multispectral datasets the agent settled on
 SSL4EO-MoCo ResNet18; on aerial RGB m-pv4ger-seg, the ImageNet ResNet34 U-Net stayed best and the SSL4EO lesson was
-hidden as out of scope.
+hidden as out of scope. On m-nz-cattle, also aerial RGB, code hid all three Sentinel-2 lessons (L001, L002, L005),
+SSL4EO weights did not apply to its 3 bands, and every run used ImageNet encoders (ResNet18, 34 and 50 within noise
+of each other).
 
 ### Level 2: models from models
 
 - Every tested model is a Level 2 composite (`workspace/vault.jsonl`).
-- The TTA gate dropped test-time augmentation on all 6 classification members and kept it on all 9 segmentation
-  members (`[level2]` lines in `logs/chain.log`).
+- The TTA gate dropped test-time augmentation on all 6 classification members and kept it on all 12 segmentation
+  members (`[level2]` lines in `logs/chain.log` and, for m-nz-cattle, `logs/nz-cattle.log`).
 - On m-eurosat and m-brick-kiln the ensemble's val equals the best single Level 1 run (98.90%, 99.30%); what it adds
   is that it cleared the z ≥ 2 gate against the incumbent (z +2.49 and +2.32), which no single run did.
 - On the segmentation datasets Level 2 raised val above every Level 1 run: m-pv4ger-seg 0.9518 → 0.9556 (TTA),
-  m-cashew-plant 0.8458 → 0.8729 (TTA ensemble), m-SA-crop-type 0.4023 → 0.4145.
+  m-cashew-plant 0.8458 → 0.8729 (TTA ensemble), m-SA-crop-type 0.4023 → 0.4145, m-nz-cattle 0.8550 → 0.8583
+  (TTA ensemble).
+- On m-nz-cattle the gains were small: TTA added 0.0020–0.0029 to each member and the ensemble 0.0025 over the TTA
+  incumbent, while the trained slot's fourth member did not help (0.8581); the agent's finalize note called the gains
+  "near the seed noise".
 
-### The playbook after five datasets
+### The playbook after six datasets
 
 | Lesson | Statement (abridged) | Born on | Re-tests | Status |
 |---|---|---|---|---|
 | L001 | SSL4EO-MoCo ResNet18 beats ImageNet ResNet18 (the ImageNet run also used 64 px against 224 px) | m-eurosat (z −1.64 for the reverse change, ImageNet in place of SSL4EO) | m-brick-kiln inconclusive (z +1.26); **m-cashew-plant confirm (0.678 → 0.818, z +2.08)**; m-SA-crop-type applied, inconclusive (z +0.47) | hypothesis, confidence 0.67 |
 | L002 | lr 1e-3 → 3e-4 with SSL4EO ResNet18 helps about 0.8 points; "treat it as weak" | m-eurosat (z +1.01) | m-brick-kiln inconclusive; m-SA-crop-type inconclusive | lead, 0.5 |
-| L003 | lr 5e-4 → 1e-3 slightly lowers mIoU (U-Net, ResNet34, ImageNet) | m-pv4ger-seg (z −1.31) | none yet | lead, 0.5 |
-| L004 | U-Net → FPN slightly lowers mIoU on high-resolution aerial imagery | m-pv4ger-seg (z −1.22) | none yet | lead, 0.5 |
+| L003 | lr 5e-4 → 1e-3 slightly lowers mIoU (U-Net, ResNet34, ImageNet) | m-pv4ger-seg (z −1.31) | m-nz-cattle inconclusive, opposite direction (with ResNet18, lr 1e-3 raised mIoU 0.8533 → 0.8550; z −1.87 against the lesson, short of the −2 refute line) | lead, 0.5 |
+| L004 | U-Net → FPN slightly lowers mIoU on high-resolution aerial imagery | m-pv4ger-seg (z −1.22) | **m-nz-cattle confirm (U-Net 0.8550 vs DeepLabV3+ 0.8505, z +4.11)**; the contrast was DeepLabV3+, not FPN: the re-test pairs the preferred U-Net against any other decoder | hypothesis, 0.67 (was lead, 0.5) |
 | L005 | U-Net → FPN lowers mIoU about 0.08 on 12-band segmentation | m-cashew-plant (z −1.17) | m-SA-crop-type inconclusive, opposite direction (FPN raised mIoU 0.387 → 0.402; z +0.32 for U-Net → FPN) | lead, 0.5 |
+| L006 | upsampling the input to 768 px (U-Net, ResNet18, ImageNet) gave about +0.001 mIoU at no time cost; "a weak lead for tiny-object aerial imagery" | m-nz-cattle (z +1.09) | none yet | lead, 0.5 |
 
-No lesson has reached *confirmed* (it needs confirmations on two datasets), and none was refuted. Source:
+No lesson has reached *confirmed* (it needs confirmations on two datasets), and none was refuted. Two lessons now
+have one confirmation each and are hypotheses: L001 (on m-cashew-plant) and L004 (on m-nz-cattle). On m-nz-cattle
+neither to-test lesson (L003, L004) could get a re-test partner in the opening, because the default opening already used
+their values (lr 5e-4, U-Net); both were re-tested by the agent's own runs 0006 and 0007. Source:
 `workspace/playbook.jsonl`; the figure under [How it works](#how-it-works) draws the same flow.
 
 ### What the agent wrote
@@ -849,6 +889,9 @@ No lesson has reached *confirmed* (it needs confirmations on two datasets), and 
   (underfit, loss falling); errors are fragmented boundaries/background confusion. Try higher lr or bigger SSL4EO
   backbone (resnet50) next." It then tried lr 1e-3 / 2e-3 and ResNet50.
 - m-pv4ger-seg profile note: "Panels vary in size, blue/grey on roofs; confusable with dark roofs/windows."
+- m-nz-cattle-0001 diagnosis: "Errors are mostly boundary pixels of tiny cattle (cattle IoU 0.72, recall 86%).
+  Backbone size doesn't matter. Try higher input resolution (upsample) to sharpen small objects." That led to run
+  0005 (768 px) and lesson L006.
 - m-SA-crop-type, as a logged knob wish: seed noise "was larger than every knob effect I measured", so it asked for
   more seed repeats per decision.
 - m-eurosat, candidly: it did not look at the confusion matrices.
@@ -856,12 +899,16 @@ No lesson has reached *confirmed* (it needs confirmations on two datasets), and 
 ### Cost
 
 Level 1 used 39.7–40.8 of its 45 GPU minutes per dataset (leftover minutes go unused, so both arms get the same
-Level 1 budget; they used 39.7 and 39.9 minutes) and Level 2 6.2–8.6 of 15. Tokens: 188,252–208,496 per dataset, Level 2 using none. Every decision run
-is charged about 5.8 of its 6 minutes. The whole chain ran as a 28-item resumable queue (`scripts/chain.sh`), started
-31 Oct 19:22 UTC; it paused itself on two failures (00:16 and 00:28 UTC, 1 Nov) and an operator resumed it; it was
+Level 1 budget; they used 39.7 and 39.9 minutes) and Level 2 6.2–8.6 of 15. Tokens: 188,252–249,161 per dataset
+(the most on m-nz-cattle), Level 2 using none. Every decision run is charged about 5.8 of its 6 minutes. The whole
+chain ran as a 28-item resumable queue (`scripts/chain.sh`), started 31 Oct 19:22 UTC; it paused itself on two failures (00:16 and 00:28 UTC, 1 Nov) and an operator resumed it; it was
 also restarted once at 22:08 UTC during m-cashew-plant's Level 1, after its first run (0002) had finished, and the
 phase resumed in a fresh agent context with the budget carried over (5.6 of 45 GPU min used; `logs/chain.log`,
-`workspace/agent_logs/m-cashew-plant__main__chain.level1.md`).
+`workspace/agent_logs/m-cashew-plant__main__chain.level1.md`). The sixth main session, m-nz-cattle (run outside `scripts/chain.sh`, see [How to read the results](#how-to-read-the-results)),
+used a separate clone of the repository at a later code tree
+(`95b096ec…`, clean, against `64276ff…` for the chain sessions) with the same prompt hash: 49.1 wall minutes for
+Level 1, reflect and Level 2, and 0.4 for finalize (`workspace/sessions.jsonl`, `logs/nz-cattle.log`, `logs/nz-cattle.finalize.log`). Its results were published
+through the same `run/chain` results branch (commits bfcba41 and cf2edfd).
 
 ## Integrity and reproducibility
 
@@ -879,23 +926,25 @@ phase resumed in a fresh agent context with the budget carried over (5.6 of 45 G
 
 **Vault.** Each entry holds `task`, `run_id`, `config_hash`, `checkpoint_sha256` (of `checkpoint.pt`, or of
 `composite.json` for a composite), `members` with their checkpoint hashes and TTA flag, `test_metrics`,
-`test_stats_sha256`, `timestamp`, `prev_entry_hash` and `entry_hash` (sha256 of the sorted-key entry). Four entries,
-chained. The 95% test intervals are grouped bootstraps (10,000 resamples, seed 0) computed from `test_stats.npz`
+`test_stats_sha256`, `timestamp`, `prev_entry_hash` and `entry_hash` (sha256 of the sorted-key entry). Five entries,
+chained (m-nz-cattle's entry chains to m-cashew-plant's). The 95% test intervals are grouped bootstraps (10,000 resamples, seed 0) computed from `test_stats.npz`
 only after its hash and score match the vault.
 
 **`python -m gotrain.verify --full`** runs 8 checks: `vault_chain`, `artifact_hashes`, `lessons_predate_test`,
 `test_registry_copy`, `registry_hashes`, `lesson_evidence`, `playbook_grew`, `main_untouched`. On the build machine,
-where the checkpoints are, it passes all 8 (the output is recorded in the message of tag `submission`). On a fresh clone it exits 1:
-`artifact_hashes` lists the 11 gitignored member `checkpoint.pt` files, while every `composite.json` and
+where the checkpoints of all six datasets are, it passes all 8 (the output is recorded in the message of tag
+`submission`). On a fresh clone it exits 1: `artifact_hashes` lists the gitignored member `checkpoint.pt`
+files (11 for the first four vault entries, 3 more for m-nz-cattle's), while every `composite.json` and
 `test_stats.npz` still matches. Tamper tests fail exactly their own check (`tests/test_step14.py`).
 
 **`python -m gotrain.verify --session <id>`** replays a session: each agent ledger row matches exactly one
 `launch_training` call, recipe hashes and knob diffs recompute, the noise gate and incumbent replay exactly, and
-every launch fits its pot. All 6 sessions (5 main plus the OFF arm, run with
+every launch fits its pot. All 6 chain sessions (the 5 main sessions of the chain plus the OFF arm, run with
 `GOTRAIN_WORKSPACE=experiments/playbook-ab/m-SA-crop-type/off/workspace`) pass on a clone; the recorded outputs are
 in `logs/chain.log` (m-SA-crop-type's recorded run covers its level1 and reflect; the queue's second
 `verify m-SA-crop-type main` item, after its Level 2, has the same text as the first, so `scripts/chain.sh` counted
-it as done and skipped it).
+it as done and skipped it). The m-nz-cattle session ran outside the chain and has no recorded `verify --session`
+output; its ledger, transcripts and session records are published for the same replay.
 
 **CI.** [`.github/workflows/tests.yml`](https://github.com/yaranoun/GoTrain/blob/main/.github/workflows/tests.yml)
 runs on every push (except the GPU chain's `run/**` results branches) and every pull request: Python 3.12, CPU torch, `pip install -e . pytest`, `gotrain-mcp --check`, then
@@ -906,13 +955,13 @@ a temporary sandbox and state folder, and a guard asserts the real registry, vau
 
 ### Logs behind each score
 
-For each task (`<task>` = m-eurosat, m-brick-kiln, m-pv4ger-seg, m-cashew-plant, m-SA-crop-type):
+For each task (`<task>` = m-eurosat, m-brick-kiln, m-pv4ger-seg, m-cashew-plant, m-SA-crop-type, m-nz-cattle):
 - Agent transcripts, one per phase: `workspace/agent_logs/<task>__main__chain.{level1,reflect,finalize}.md`
   (+ `.jsonl`). m-SA-crop-type's finalize transcript is `.jsonl` only and stops at the finalize call (INC-002).
 - Run tree: `report/trees/<task>__main__chain.png` (+ `.txt`).
 - Level 2, which built every tested model, is run by code (no LLM, so no transcript): `report/level2.md` lists every
-  composite with its val score and whether it was promoted, and the `[level2]` lines in `logs/chain.log` show each
-  noise-gate decision.
+  composite with its val score and whether it was promoted, and the `[level2]` lines in `logs/chain.log` (for
+  m-nz-cattle, `logs/nz-cattle.log`) show each noise-gate decision.
 - Training log of each trained run: `logs/<run_id>.log` (composites train nothing, so they have none).
 - Model card, written by code: `workspace/model_cards/<task>.md` (none for m-SA-crop-type).
 - One command: `python -m gotrain.trace <task>` (also `examples/trace_a_score.py` and the MCP tool `trace_score`)
@@ -921,7 +970,8 @@ For each task (`<task>` = m-eurosat, m-brick-kiln, m-pv4ger-seg, m-cashew-plant,
 - The OFF arm of the with/without-playbook test keeps its own logs and workspace under
   `experiments/playbook-ab/m-SA-crop-type/off/`.
 - The queue log `logs/chain.log` records every queue item with UTC times, tokens per phase, the `[level2]` gate
-  lines, the verify outputs and the operator note.
+  lines, the verify outputs and the operator note. m-nz-cattle, run outside the queue, has its own session logs:
+  `logs/nz-cattle.log` (level1, reflect, level2), `logs/nz-cattle.finalize.log` and `logs/nz-cattle.build_cache.log`.
 
 ### Seven checked steps
 
@@ -933,7 +983,7 @@ composite, else the incumbent); the agent's message in the finalize transcript i
 the vault entry, `python -m gotrain.trace <task>` checks seven steps, and `python -m gotrain.verify --full` /
 `--session <id>` re-derive them:
 
-1. **Vault entry:** `workspace/vault.jsonl` is hash-chained, one entry per dataset, holding the test score recorded
+1. **Vault entry:** `workspace/vault.jsonl` is hash-chained, one entry per tested dataset (five; m-SA-crop-type has none), holding the test score recorded
    once. The entry hash recomputes and chains to the previous entry; `verify --full` recomputes the whole chain.
 2. **Model files:** the checkpoint or `composite.json`, and every member checkpoint hash, equal the vault's. On a
    fresh clone the member checkpoints cannot be re-hashed (see
@@ -942,9 +992,8 @@ the vault entry, `python -m gotrain.trace <task>` checks seven steps, and `pytho
    the 95% grouped interval.
 4. **Ledger:** `workspace/ledger.jsonl` holds one row per run: session, arm, launcher, parent, knob change,
    recipe hash, outcome with its noise (delta, sigma, z) and the incumbent at that moment. `verify --session`
-   replays the noise gate and the pots. Its recorded output for all 6 sessions is in `logs/chain.log`
-   (m-SA-crop-type's recorded run covers its level1 and reflect; the queue's second `verify m-SA-crop-type main`
-   item, after its Level 2, has the same text as the first, so `scripts/chain.sh` counted it as done and skipped it).
+   replays the noise gate and the pots. Its recorded outputs for the 6 chain sessions are in `logs/chain.log`;
+   m-nz-cattle has none recorded (see [Integrity and reproducibility](#integrity-and-reproducibility)).
 5. **Transcript:** `workspace/agent_logs/<session>.<phase>.jsonl` (+ `.md`; the published sessions are listed
    above). Each agent launch matches exactly one `launch_training` call with the same hypothesis and config.
 6. **Session header:** `workspace/sessions.jsonl` records the code tree hash, prompt hash, playbook hash, model
@@ -958,8 +1007,9 @@ The `python -m gotrain.*` commands below and in [Trace a score](#trace-a-score) 
 [From source](#from-source)); on a pip install set `GOTRAIN_WORKSPACE` first.
 
 - **Model registry.** `python -m gotrain.registry sync | list`; ids `<task>:vN` with tags candidate / production /
-  archived, hashes equal to the vault's. `m-eurosat:v1`, `m-brick-kiln:v1`, `m-pv4ger-seg:v1` and
-  `m-cashew-plant:v1` are in production (`workspace/registry.jsonl`).
+  archived, hashes equal to the vault's. `m-eurosat:v1`, `m-brick-kiln:v1`, `m-pv4ger-seg:v1`,
+  `m-cashew-plant:v1` and `m-nz-cattle:v1` are in production (`workspace/registry.jsonl`; m-SA-crop-type has no test
+  score, so it is not registered).
 - **Model cards.** Written entirely by code (`workspace/model_cards/<task>.md`), with the test interval, the GEO-Bench
   reference and the incidents.
 - **Artifact store.** Datasets and models move through `python -m gotrain.store doctor | push-dataset |
@@ -1011,8 +1061,10 @@ sandbox first. Operator mode of the MCP server (`GOTRAIN_MCP_OPERATOR=1`) is ava
 
 **Tags.** `v1.0.0` is the PyPI release. `submission` points at the `main` these results and docs are published from;
 `submission-v1` (215f259, the GPU chain results), `submission-v2` (c480ea1, the `gotrain` CLI and the 1.0.0
-packaging), `submission-v3` (25db46c, after 1.0.0 went live on PyPI) and `submission-v4` (854908f, final docs, the
-MCP GPU check and CI) keep earlier states. All of them carry the same results, from the GPU chain merged at 5f6fe9c.
+packaging), `submission-v3` (25db46c, after 1.0.0 went live on PyPI), `submission-v4` (854908f, final docs, the
+MCP GPU check and CI) and `submission-v5` (199689f, the README for the first five datasets) keep earlier states. All of them carry the same
+results for the first five datasets, from the GPU chain merged at 5f6fe9c; m-nz-cattle's results were added after
+`submission-v5`.
 
 ## Layout
 
@@ -1047,7 +1099,7 @@ examples/            example MCP host client (gopilot_client.py), MCP client con
 scripts/             chain.sh (GPU queue), publish.sh, build_release.sh, check_dist.py, geobench_baselines.py
 tests/               CPU gates on synthetic data (run by CI)
 report/              results, Level 2 table, lesson flow, A/B figure, run trees, dashboard
-logs/                chain.log, reaper.log, one training log per run
+logs/                chain.log, nz-cattle*.log (the 6th dataset's session), reaper.log, one training log per run
 docs/                MCP.md (MCP guide), ledger_and_tools.md
                      (record formats); PLAN, CREATIVE_PLAN, INTERFACES, SECOND_SESSION (build records)
 workspace/           ledger, sessions, vault, playbook, registry, model cards, profiles, runs
@@ -1071,7 +1123,7 @@ Ideas from the design phase and where they ended up:
 | Idea | Outcome |
 |---|---|
 | Errors weigh more on small datasets | built: the noise gate, grouped test intervals, training-set size as a lesson-ranking feature; idea: `show_suspects` / `drop_suspects` |
-| Work on any dataset | built: one prompt that names no dataset, unknown sensor → lesson never applied, a 12-task registry, a 6th dataset (m-nz-cattle) cached, trained, evaluated and given a Level 1 agent session through the MCP server, as a sandbox tool check ([docs/MCP.md#status](https://github.com/yaranoun/GoTrain/blob/main/docs/MCP.md#status)); idea: a GeoTIFF folder adapter |
+| Work on any dataset | built: one prompt that names no dataset, unknown sensor → lesson never applied, a 12-task registry, a 6th dataset (m-nz-cattle, cattle in 0.1 m aerial RGB) trained end to end by the agent (arm main, all four phases, finalized once; first checked as a sandbox tool check through the MCP server, [docs/MCP.md#status](https://github.com/yaranoun/GoTrain/blob/main/docs/MCP.md#status)); idea: a GeoTIFF folder adapter |
 | Small models, physics priors | built: lesson context by weights family, per-weights normalisation, NDVI in the profile grids; idea: an `indices` knob (NDVI / NDWI / NDBI) |
 | Detect whether data is already processed | cut: a data-state detector; cloud layers were checked by hand instead |
 | Any Hugging Face model | not built: the model zoo stays fixed so datasets and arms stay on equal terms; idea: `search_models` |
@@ -1091,6 +1143,13 @@ Ideas from the design phase and where they ended up:
   like the other Sentinel-2 tasks.
 - `m-cashew-plant` and `m-SA-crop-type` ignore class 0 ("no data") in loss and metrics; `m-cashew-plant`'s test
   split is 50 images.
+- `m-nz-cattle` is 8-bit aerial RGB at 0.1 m GSD, 3×500×500, stored and loaded as R, G, B and z-score normalised
+  (SSL4EO weights do not apply to RGB). Its masks are radius-6 px boxes around point labels, so the classes are
+  "no cattle" and "cattle", with cattle 2.27% of train pixels (2.26% of val). Class 0 is counted, so its mIoU is the
+  mean of both IoUs, as in the GEO-Bench protocol; on test the cattle IoU is 0.7145 and the background IoU 0.9917.
+- `m-nz-cattle` has 524 train and 66 val images; test has 65 images in 63 groups. About half the images have a
+  "_shifted" twin (204 pairs in train, 6 in val), grouped by location in the bootstrap. 50 val locations also occur
+  in train; that is GEO-Bench's own split, disclosed and not changed (`gotrain/engine/tasks.py`, the model card).
 
 ## References
 
