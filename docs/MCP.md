@@ -41,15 +41,17 @@ never a test split).
 ## Install
 
 ```bash
-pip install "git+https://github.com/yaranoun/GoTrain.git"           # main (Python >= 3.12)
-pip install "git+https://github.com/yaranoun/GoTrain.git@v1.0.0"    # a tagged release
+pip install gotrain                                                 # PyPI: gotrain 1.0.0 (Python >= 3.12)
+gotrain --version
 gotrain-mcp --version
 GOTRAIN_WORKSPACE=/path/to/GoTrain/workspace gotrain-mcp --check    # resolved folders + tool count, exit 0 if usable
 ```
 
-Until the `s2` branch is merged into `main` and `v1.0.0` is tagged, install with `...GoTrain.git@s2` (the ref the
-fresh-virtualenv check below used). On a CPU-only machine install CPU torch first (`pip install torch torchvision --index-url
-https://download.pytorch.org/whl/cpu`), or pip pulls the CUDA build.
+Other sources of the same package: `pip install "git+https://github.com/yaranoun/GoTrain.git@v1.0.0"` (the commit
+the PyPI files were built from) or `...GoTrain.git` (main). On a CPU-only machine install CPU torch first (`pip
+install torch torchvision --index-url https://download.pytorch.org/whl/cpu`), or pip pulls the CUDA build. Python
+3.12 or newer is required: on an older Python, `pip install gotrain` installs 0.0.1, an empty placeholder that
+reserved the name, so use `pip install "gotrain>=1"` there to get a clear error instead.
 
 The package installs two commands. `gotrain-mcp` is the MCP server. `gotrain` is the user-facing command, a thin
 wrapper around the same modules:
@@ -172,7 +174,9 @@ npx @modelcontextprotocol/inspector gotrain-mcp
   runs `gotrain-mcp --version`, `gotrain-mcp --check` and one MCP client call over stdio. CPU only; it never uploads.
   The maintainer uploads with their own PyPI token, from their own terminal:
   `python -m twine upload dist/gotrain-<version>.tar.gz dist/gotrain-<version>-py3-none-any.whl`. PyPI accepts each
-  version once: a fix is a new version. The PyPI page shows the README as it was at the build.
+  version once: a fix is a new version. The PyPI page shows the README as it was at the build. 1.0.0 is on PyPI
+  (uploaded 1 Nov; wheel sha256 `0116c72d…112a`, sdist `e8eb2e22…633e`), built from tag `v1.0.0`
+  (branch `release/1.0.0`: main's package code plus the README for PyPI).
 - **CI.** `ci/github-actions-tests.yml` is a GitHub Actions workflow for every push (except the chain's `run/**`
   results branches) and pull request: CPU torch, `pip install -e . pytest`, `gotrain-mcp --check`, then
   `python -m pytest -q tests/` (synthetic data; no GPU, no test split; 216 passed). To switch it
@@ -1140,7 +1144,9 @@ server's stderr goes to `<sandbox>/gopilot_server.log` (`--server-log -` shows i
 | archive (operator) | ok on CPU |
 | store_push (operator) | local store: ok on CPU · S3: blocked until IAM grants `s3:PutObject` |
 
-Packaging: `pip install "git+https://github.com/yaranoun/GoTrain.git@s2"` was checked in a fresh virtualenv on 1 Nov
-(CPU torch, Python 3.12): `gotrain-mcp --version` / `--check` (installed layout, 27 tools), then an MCP stdio client
+Packaging: `pip install gotrain` (1.0.0 from PyPI) was checked in a fresh virtualenv on 1 Nov (CPU torch, Python
+3.12): `gotrain --version`, `gotrain-mcp --version` / `--check` (installed layout, 27 tools), and the one-line `gotrain
+train` preflight errors. Before that, `pip install "git+https://github.com/yaranoun/GoTrain.git@s2"` was checked the
+same way: `gotrain-mcp --version` / `--check` (installed layout, 27 tools), then an MCP stdio client
 listed the tools and called `list_tasks` and `query_runs` on a fresh clone's `workspace/`, and got a refusal with
 `isError`. The launcher's gates: `tests/test_mcp_cli.py`.
