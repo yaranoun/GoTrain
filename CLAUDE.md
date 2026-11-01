@@ -1,5 +1,7 @@
 # GoTrain
 
+> Contributor working notes from the hackathon build (31 Oct – 1 Nov 2026), kept for traceability. Users: start at [README.md](README.md); MCP / GoPilot: [docs/MCP.md](docs/MCP.md).
+
 AI agent that trains geospatial models on its own (AUB ACM × RASID hackathon, 31 Oct – 1 Nov 2026).
 Given a GEO-Bench task, it profiles the data, picks an approach, trains on the GPU, checks its val score and iterates.
 Built with Strands + Claude Sonnet on Bedrock (`eu.anthropic.claude-sonnet-5-5`, `eu-central-1`), on a SageMaker GPU instance.
@@ -82,8 +84,15 @@ profile → read playbook → compose first config → Level 1 (pot P1, fixed ru
 
 ## Incidents (disclosed)
 - **INC-001 (31 Oct): m-eurosat test split evaluated once by accident** while hand-checking the Step 3 tools: a notebook passed the killed tool-check run `m-eurosat-0005` (5 epochs) to `finalize`; test accuracy 0.895 was observed. No model or decision was chosen with it. The team voided the vault entry (kept verbatim in `workspace/vault_incidents.jsonl`); m-eurosat will be finalized once more with a model selected on val only, and that score must be reported together with this incident. Fixes: finalize accepts only `done` runs; tool checks run in a sandbox where finalize/final_test refuse.
+- **INC-002 (1 Nov):** m-SA-crop-type's one test evaluation was killed by the out-of-memory killer after the test registry recorded `opened`; no test score. See README and `workspace/vault_incidents.jsonl`.
 
-## Status (31 Oct)
+## Final status (1 Nov)
+- Results only in `report/results.md` and README §Results (generated from the vault); the val numbers in the build log below are hand-run baselines from before the agent runs, superseded.
+- INC-001 / INC-002: README and `workspace/vault_incidents.jsonl`.
+- Store: S3-ready; the hackathon deployment uses the local file-system store by the organisers' decision.
+- Release: gotrain 1.0.0 on PyPI (tag `v1.0.0`); submission: tag `submission`.
+
+## Build log (31 Oct – 1 Nov, historical)
 - **Tasks:** classification `m-eurosat`, `m-brick-kiln`; segmentation `m-pv4ger-seg`, `m-cashew-plant`.
 - Engine done for classification + segmentation; Step 3 tools done (`notebooks/step3_tools_check.ipynb`). Default budget 60 GPU min/task (`runs.set_budget`, operator only).
 - Step 4 agent loop done (`gotrain/run.py`). Sandbox dry run on m-eurosat, 8 GPU min: 7 runs, 96.4% → 98.9% val (ResNet18 SSL4EO 224px), finalize attempted on the best run, 24 tool calls, 9 min, ~265k tokens. finalize is refused until 3 runs finished or <20% budget left (`--min-runs`).
