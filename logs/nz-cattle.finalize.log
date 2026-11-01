@@ -1,0 +1,12 @@
+Session m-nz-cattle__main__chain · arm main · B 60.0 (R 6.0, P1 45.0, P2 15.0) · workspace /home/sagemaker-user/GoTrain-nz/workspace
+[finalize] transcript: /home/sagemaker-user/GoTrain-nz/workspace/agent_logs/m-nz-cattle__main__chain.finalize.jsonl
+
+Tool #1: get_budget
+
+Tool #2: query_ledger
+
+Tool #3: finalize
+Building cache for m-nz-cattle/test (one time)...
+I finalized the dataset. The model sent to the test split is the incumbent, `m-nz-cattle-L2-004`. It averages three models with test-time augmentation (TTA). Its validation mIoU is 0.8583, the best in the ledger. I can't see the test score. The vault hash is `sha256:a50d655f918980c777f009a11c68343656a8892a17ee35d52269d6dbfad9eb7a`.
+
+The ensemble's gain over the single models is small, about 0.0005–0.004 mIoU, which is close to seed noise. Adding a fourth member (`L2-006`) gave 0.8581, no better. At finalize, 4.2 minutes were left in the Level 1 pot and 8.3 minutes in the Level 2 pot.[finalize] end: 3 tool calls, 0.4 min, tokens {'inputTokens': 6281, 'outputTokens': 475, 'totalTokens': 10719} (transcript m-nz-cattle__main__chain.finalize.md)

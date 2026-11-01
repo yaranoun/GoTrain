@@ -1,0 +1,12 @@
+{
+ "task": "m-nz-cattle",
+ "mechanism": "tta",
+ "members": [
+  {
+   "run_id": "m-nz-cattle-0005",
+   "run_dir": "runs/m-nz-cattle/m-nz-cattle-0005",
+   "tta": true,
+   "checkpoint_sha256": "sha256:e63dd115c7e66e2aa9b24f8d888f378e548ee2bbeba5846736db3c599ef81f2e"
+  }
+ ]
+}

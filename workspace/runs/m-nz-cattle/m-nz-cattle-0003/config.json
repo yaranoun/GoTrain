@@ -1,0 +1,5 @@
+{
+  "task": "m-nz-cattle",
+  "backbone": "resnet50",
+  "time_limit_min": 6.0
+}

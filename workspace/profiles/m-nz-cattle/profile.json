@@ -1,0 +1,64 @@
+{
+  "task": "m-nz-cattle",
+  "task_type": "segmentation",
+  "sensor": "aerial-rgb",
+  "gsd_m": 0.1,
+  "n_bands": 3,
+  "band_names": [
+    "R",
+    "G",
+    "B"
+  ],
+  "band_roles": {
+    "red": "R",
+    "green": "G",
+    "blue": "B"
+  },
+  "img_shape": [
+    3,
+    500,
+    500
+  ],
+  "splits": {
+    "train": 524,
+    "val": 66
+  },
+  "classes": [
+    "no cattle",
+    "cattle"
+  ],
+  "band_stats": {
+    "R": {
+      "mean": 126.21,
+      "std": 23.35,
+      "p1": 50.0,
+      "p99": 180.0
+    },
+    "G": {
+      "mean": 130.02,
+      "std": 19.84,
+      "p1": 55.0,
+      "p99": 173.0
+    },
+    "B": {
+      "mean": 106.48,
+      "std": 18.99,
+      "p1": 51.0,
+      "p99": 153.0
+    }
+  },
+  "nonfinite_values": 0,
+  "all_zero_pixel_fraction": 0.0,
+  "pixel_fraction_train": {
+    "no cattle": 0.9773,
+    "cattle": 0.0227
+  },
+  "pixel_fraction_val": {
+    "no cattle": 0.9774,
+    "cattle": 0.0226
+  },
+  "images": [
+    "/home/sagemaker-user/GoTrain-nz/workspace/profiles/m-nz-cattle/samples_true_color.png"
+  ],
+  "agent_notes": "RGB aerial 0.1m, 500x500, tiny cattle objects, 2.3% positive pixels (heavy imbalance). Small val (66). Small-object segmentation: keep native resolution, d4 aug."
+}

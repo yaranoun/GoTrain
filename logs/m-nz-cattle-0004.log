@@ -1,0 +1,6 @@
+run_dir: /home/sagemaker-user/GoTrain-nz/workspace/runs/m-nz-cattle/m-nz-cattle-0004
+{"epoch": 6, "train_loss": 0.44589245210712153, "val_miou": 0.8371835355348056, "lr": 0.0004467615790033672, "steps": 192, "elapsed_s": 78.9}
+{"epoch": 12, "train_loss": 0.14707204311465225, "val_miou": 0.8393243716795702, "lr": 0.00030822326026407716, "steps": 192, "elapsed_s": 152.2}
+{"epoch": 18, "train_loss": 0.13070146176808825, "val_miou": 0.8512541610621307, "lr": 0.00014463563881494539, "steps": 192, "elapsed_s": 225.6}
+{"epoch": 24, "train_loss": 0.1247731480980292, "val_miou": 0.8525908783688507, "lr": 2.6556651222803098e-05, "steps": 192, "elapsed_s": 299.0}
+{"epoch": 29, "train_loss": 0.12271597202528607, "val_miou": 0.8533374623696893, "lr": 4.421515633068474e-10, "steps": 132, "elapsed_s": 349.7}

@@ -1,0 +1,18 @@
+{
+  "split": "val",
+  "tta": false,
+  "miou": 0.8538430952017312,
+  "per_class_iou": [
+    0.9921,
+    0.7156
+  ],
+  "pixel_accuracy": 0.9922442424242425,
+  "classes": [
+    "no cattle",
+    "cattle"
+  ],
+  "plots": [
+    "/home/sagemaker-user/GoTrain-nz/workspace/runs/m-nz-cattle/m-nz-cattle-0001/plots/confusion.png",
+    "/home/sagemaker-user/GoTrain-nz/workspace/runs/m-nz-cattle/m-nz-cattle-0001/plots/failures.png"
+  ]
+}

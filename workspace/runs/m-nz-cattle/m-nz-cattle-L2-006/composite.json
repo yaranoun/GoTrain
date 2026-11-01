@@ -1,0 +1,30 @@
+{
+ "task": "m-nz-cattle",
+ "mechanism": "ensemble",
+ "members": [
+  {
+   "run_id": "m-nz-cattle-0006",
+   "run_dir": "runs/m-nz-cattle/m-nz-cattle-0006",
+   "tta": true,
+   "checkpoint_sha256": "sha256:5e5f3dba320875501a64f56f7b1355e308d8b25a668e051bb1678f17b480a6d2"
+  },
+  {
+   "run_id": "m-nz-cattle-0005",
+   "run_dir": "runs/m-nz-cattle/m-nz-cattle-0005",
+   "tta": true,
+   "checkpoint_sha256": "sha256:e63dd115c7e66e2aa9b24f8d888f378e548ee2bbeba5846736db3c599ef81f2e"
+  },
+  {
+   "run_id": "m-nz-cattle-0001",
+   "run_dir": "runs/m-nz-cattle/m-nz-cattle-0001",
+   "tta": true,
+   "checkpoint_sha256": "sha256:85694f11f73f76be4e8f340158faa81d71ad3da25cfc5b206d9c818a25d4e9bc"
+  },
+  {
+   "run_id": "m-nz-cattle-0012",
+   "run_dir": "runs/m-nz-cattle/m-nz-cattle-0012",
+   "tta": false,
+   "checkpoint_sha256": "sha256:70bdbcd5753799b5e07d62c91d3d4a6c4a9bb22fcb482fa6ba60aca9359bf8ee"
+  }
+ ]
+}
