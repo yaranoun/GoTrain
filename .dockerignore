@@ -1,0 +1,13 @@
+.git
+.sandbox
+.venv
+workspace
+experiments
+logs
+notebooks
+tests
+docs
+**/__pycache__
+**/*.pt
+**/*.npz
+**/*.npy

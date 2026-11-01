@@ -18,12 +18,15 @@ a finalized task gets no more training. Test scores appear only as the vault rec
 Every tool with its mode and GPU use: [Tools](#tools).
 
 Code: `gotrain/mcp_server.py` (the tools), `gotrain/jobs.py` (background jobs), `gotrain/predict.py` (inference),
-`gotrain/mcp_ops.py` (read operations), `gotrain/trace.py` (score tracing). Example client:
-`examples/gopilot_client.py`. Client config: `examples/mcp.json`. Gates: `tests/test_mcp.py`, `tests/test_jobs.py`,
-`tests/test_mcp_ops.py`, `tests/test_predict.py`, `tests/test_step13.py` (CPU, synthetic, never a test split).
+`gotrain/mcp_ops.py` (read operations), `gotrain/trace.py` (score tracing). Launcher and configuration:
+`gotrain/mcp_cli.py` (`gotrain-mcp`), `gotrain/mcp_config.py`. Example client: `examples/gopilot_client.py`. Client
+configs: `examples/mcp*.json`. Gates: `tests/test_mcp.py`, `tests/test_jobs.py`,
+`tests/test_mcp_ops.py`, `tests/test_predict.py`, `tests/test_mcp_cli.py`, `tests/test_step13.py` (CPU, synthetic,
+never a test split).
 
 - [What a GoPilot user can do](#what-a-gopilot-user-can-do)
-- [Setup](#setup)
+- [Install](#install) · [Configuration](#configuration) · [Clients](#clients) ·
+  [Versions, CI and Docker](#versions-ci-and-docker)
 - [Two modes](#two-modes)
 - [Tools](#tools)
 - [Guards](#guards)
@@ -35,56 +38,124 @@ Code: `gotrain/mcp_server.py` (the tools), `gotrain/jobs.py` (background jobs), 
 - [The GoPilot example client](#the-gopilot-example-client)
 - [Status](#status)
 
-## Setup
+## Install
 
 ```bash
-pip install -e .                      # editable install: the server finds the repo (workspace/, .sandbox/) from its own path
-gotrain-mcp                           # stdio server (console script from pyproject.toml)
-python -m gotrain.mcp_server          # the same, from the repo root, without installing
-python -m gotrain.mcp_server --http   # streamable HTTP at http://127.0.0.1:8765/mcp
-python -m gotrain.mcp_server --http --host 0.0.0.0 --port 8765   # no authentication: trusted networks only
+pip install "git+https://github.com/yaranoun/GoTrain.git"           # latest main (Python >= 3.11)
+pip install "git+https://github.com/yaranoun/GoTrain.git@v1.0.0"    # a tagged release
+gotrain-mcp --version
+GOTRAIN_WORKSPACE=/path/to/GoTrain/workspace gotrain-mcp --check    # resolved folders + tool count, exit 0 if usable
 ```
 
-The HTTP server prints its mode, the results workspace and the sandbox workspace to stderr on start. On stdio,
-stdout carries the protocol only: tool code and child processes print to stderr. The server refuses to start
-(`RuntimeError` at import) when the sandbox workspace overlaps the results, main or default workspace (see
-[Workspaces](#workspaces)).
+On a CPU-only machine install CPU torch first (`pip install torch torchvision --index-url
+https://download.pytorch.org/whl/cpu`), or pip pulls the CUDA build.
 
-**GoPilot / Claude Desktop.** `examples/mcp.json` holds two entries: `gotrain` (default mode) and
-`gotrain-operator` (`GOTRAIN_MCP_OPERATOR=1`, for the operator only). Replace `/path/to/GoTrain`, and set `command`
-to the absolute path of the Python that has GoTrain installed when the client does not start from your shell. For
-Claude Desktop, merge its `mcpServers` block into `claude_desktop_config.json`. A client without a `cwd` key works
-too: `PYTHONPATH` or the editable install is enough.
+An installed package lives in site-packages, so nothing defaults to it: `gotrain-mcp` fills every unset folder under
+`GOTRAIN_HOME` (default `~/.gotrain`): results `~/.gotrain/workspace` (created empty), sandbox
+`~/.gotrain/mcp/workspace`, data cache `~/.gotrain/cache`. What an install serves:
+
+- **every read tool** on any results folder: point `GOTRAIN_WORKSPACE` at a clone's `workspace/` (ledger, sessions,
+  vault, registry, model cards, playbook, profiles are in git);
+- **predict** with a model whose files are present (`checkpoint.pt` in its run folder: on the training machine, or
+  fetched from the artifact store; checkpoints are not in git) and the task's data cache (`download_task`, then
+  `build_cache`);
+- **jobs** on this machine (download, cache build, dev sessions, manual runs, evaluations), under the one-GPU-job rule;
+- **not finalize or arm main sessions**: they act only on a source checkout's `<repo>/workspace` (anywhere else
+  counts as a sandbox, where finalize refuses).
+
+From a source checkout the defaults are the repository's own folders, as for the rest of GoTrain:
+
+```bash
+git clone https://github.com/yaranoun/GoTrain.git && cd GoTrain && pip install -e .
+gotrain-mcp                               # stdio; results <repo>/workspace, sandbox <repo>/.sandbox/mcp/workspace
+gotrain-mcp --http                        # streamable HTTP at http://127.0.0.1:8765/mcp
+gotrain-mcp --http --host 0.0.0.0 --port 8765    # no authentication: trusted networks only
+python -m gotrain.mcp_server              # the server itself, without the launcher's checks (same tools)
+```
+
+`gotrain-mcp` checks the configuration, creates the sandbox (and its `inputs/` folder), then replaces itself with the
+server (`exec`), so a stdio client talks to the server directly. On stdio, stdout carries the protocol only: tool code
+and child processes print to stderr. The HTTP server prints its mode and workspaces to stderr on start.
+
+## Configuration
+
+Environment variables only (`gotrain/mcp_config.py`, `ENV`). `gotrain-mcp` refuses a bad configuration before the
+server starts, with one line per problem and exit code 2, and creates nothing:
+
+```
+gotrain-mcp: configuration error:
+  - GOTRAIN_MCP_OPERATOR must be 0 or 1, not 'yes'
+  - GOTRAIN_WORKSPACE=/nope does not exist: point it at a GoTrain results folder (a clone's workspace/) or create it (an empty folder serves an empty workspace)
+  - the MCP sandbox workspace /x/workspace/sub overlaps the results workspace /x/workspace: set GOTRAIN_MCP_WORKSPACE to a separate folder
+```
+
+The server repeats the layout checks at import (`RuntimeError`), so `python -m gotrain.mcp_server` from an installed
+package without `GOTRAIN_WORKSPACE` and `GOTRAIN_CACHE` refuses to start instead of using site-packages.
+
+Environment:
+
+| Variable | Default (source checkout · installed) | Meaning |
+|---|---|---|
+| `GOTRAIN_HOME` | unused · `~/.gotrain` | installed layout: where the defaults below live |
+| `GOTRAIN_WORKSPACE` | `<repo>/workspace` · `GOTRAIN_HOME/workspace` | the **results** workspace, read by the read tools (`workspace="results"`) |
+| `GOTRAIN_MCP_WORKSPACE` | `<repo>/.sandbox/mcp/workspace` · `GOTRAIN_HOME/mcp/workspace` | the **sandbox** (job) workspace: everything made through the server; must not equal, sit inside, contain or sit next to (share a parent with) the results, main or default workspace |
+| `GOTRAIN_MCP_INPUT_DIR` | `<sandbox>/inputs` | the only folder `predict` reads image files from (relative paths are taken from it); `gotrain-mcp` creates it |
+| `GOTRAIN_MCP_OPERATOR` | `0` | `1` registers the operator tools at start; anything but `0` / `1` is refused |
+| `GOTRAIN_MCP_MAIN_WORKSPACE` | `<repo>/workspace` | operator mode: where finalize, arm main, registry tags and store pushes act; finalize and arm main work only when it is `<repo>/workspace` (any other folder counts as a sandbox, where finalize refuses) |
+| `GOTRAIN_MCP_TEXT_CAP` | `6000` | characters per text answer (bounded documents excepted) |
+| `GOTRAIN_STATE_DIR` | `~/.gotrain-state` | machine-wide GPU lock, session lease, test registry |
+| `GOTRAIN_CACHE` | `<repo>/workspace/cache` · `GOTRAIN_HOME/cache` | the data cache (derived data, shared) |
+| `GOTRAIN_STORE`, `GOTRAIN_STORE_ROOT` | `local`, `~/.gotrain-store` | artifact store: a folder, or `s3://bucket/prefix` |
+| `GEO_BENCH_DIR` | GEO-Bench's default | the dataset folder |
+
+## Clients
+
+**GoPilot / Claude Desktop.** Paste the `mcpServers` block of a file in `examples/` into the client's config (for
+Claude Desktop, `claude_desktop_config.json`):
+
+- `examples/mcp.json`: the installed `gotrain-mcp`, default mode. Set `GOTRAIN_WORKSPACE` to the results folder and
+  `GOTRAIN_HOME` to where the sandbox and cache may live. GoPilot uses this entry.
+- `examples/mcp.operator.json`: operator mode (`GOTRAIN_MCP_OPERATOR=1`) on a source checkout, for the operator
+  only: it exposes finalize. Keep it out of shared client configs.
+- `examples/mcp.source.json`: a source checkout without installing (`python -m gotrain.mcp_cli` with `PYTHONPATH`).
+
+When the client does not start from your shell (Claude Desktop, GoPilot services), set `command` to the absolute
+path of `gotrain-mcp` (`which gotrain-mcp`, for example `/path/to/venv/bin/gotrain-mcp`).
 
 **Claude Code.**
 
 ```bash
-claude mcp add gotrain -- python -m gotrain.mcp_server
-claude mcp add gotrain -e GOTRAIN_WORKSPACE=/path/to/GoTrain/workspace -- python -m gotrain.mcp_server   # explicit workspace
+claude mcp add gotrain -e GOTRAIN_WORKSPACE=/path/to/GoTrain/workspace -- gotrain-mcp
 ```
 
 **MCP Inspector** (browse the tools and call them by hand):
 
 ```bash
-npx @modelcontextprotocol/inspector python -m gotrain.mcp_server
+npx @modelcontextprotocol/inspector gotrain-mcp
 ```
 
 **Strands (Python).** `examples/gopilot_client.py`. See [the GoPilot example client](#the-gopilot-example-client).
 
-Environment:
+## Versions, CI and Docker
 
-| Variable | Default | Meaning |
-|---|---|---|
-| `GOTRAIN_WORKSPACE` | `<repo>/workspace` | the **results** workspace, read by the read tools (`workspace="results"`) |
-| `GOTRAIN_MCP_WORKSPACE` | `<repo>/.sandbox/mcp/workspace` | the **sandbox** (job) workspace: everything made through the server; must not equal, sit inside, contain or sit next to (share a parent with) the results, main or default workspace |
-| `GOTRAIN_MCP_INPUT_DIR` | `<sandbox>/inputs` | the only folder `predict` reads image files from (relative paths are taken from it); not created by the server |
-| `GOTRAIN_MCP_OPERATOR` | unset | `1` registers the operator tools at start |
-| `GOTRAIN_MCP_MAIN_WORKSPACE` | `<repo>/workspace` | operator mode: where finalize, arm main, registry tags and store pushes act; finalize and arm main work only when it is `<repo>/workspace` (any other folder counts as a sandbox, where finalize refuses) |
-| `GOTRAIN_MCP_TEXT_CAP` | `6000` | characters per text answer (bounded documents excepted) |
-| `GOTRAIN_STATE_DIR` | `~/.gotrain-state` | machine-wide GPU lock, session lease, test registry |
-| `GOTRAIN_CACHE` | `<repo>/workspace/cache` | the data cache (derived data, shared) |
-| `GOTRAIN_STORE`, `GOTRAIN_STORE_ROOT` | `local`, `~/.gotrain-store` | artifact store: a folder, or `s3://bucket/prefix` |
-| `GEO_BENCH_DIR` | GEO-Bench's default | the dataset folder |
+- **Version.** `pyproject.toml` (`1.0.0`); `gotrain-mcp --version` and the server's `serverInfo.version` in
+  `initialize` report it.
+- **Release.** Bump `version` in `pyproject.toml`, merge to `main`, then tag that commit and push the tag:
+  `git tag -a v1.0.0 -m "GoTrain 1.0.0" && git push origin v1.0.0`. Clients pin it with
+  `pip install "git+https://github.com/yaranoun/GoTrain.git@v1.0.0"`. A tag is never moved; a fix is a new version.
+- **CI.** `ci/github-actions-tests.yml` is a GitHub Actions workflow for every push (except the chain's `run/**`
+  results branches) and pull request: CPU torch, `pip install -e . pytest`, `gotrain-mcp --check`, then
+  `python -m pytest -q tests/` (synthetic data; no GPU, no test split; 207 passed with no local cache). To switch it
+  on, copy it to `.github/workflows/tests.yml` and push with a token that has the `workflow` scope (or add the file in
+  the GitHub web UI): the hackathon token cannot create workflow files.
+- **Docker** (optional). `Dockerfile`: CPU, `gotrain-mcp --http --host 0.0.0.0 --port 8765`, everything under the
+  `/data` volume (`GOTRAIN_HOME=/data`, results `/data/workspace`). No authentication: publish the port only on a
+  trusted network. Not built on the training instance (it has no docker daemon).
+
+```bash
+docker build -t gotrain-mcp .
+docker run --rm -p 8765:8765 -v gotrain-data:/data -v "$PWD/workspace:/data/workspace:ro" gotrain-mcp
+```
 
 ## Two modes
 
@@ -1032,3 +1103,8 @@ server's stderr goes to `<sandbox>/gopilot_server.log` (`--server-log -` shows i
 | promote (operator) | ok on CPU |
 | archive (operator) | ok on CPU |
 | store_push (operator) | local store: ok on CPU · S3: blocked until IAM grants `s3:PutObject` |
+
+Packaging: `pip install "git+https://github.com/yaranoun/GoTrain.git@s2"` was checked in a fresh virtualenv on 1 Nov
+(CPU torch, Python 3.12): `gotrain-mcp --version` / `--check` (installed layout, 27 tools), then an MCP stdio client
+listed the tools and called `list_tasks` and `query_runs` on a fresh clone's `workspace/`, and got a refusal with
+`isError`. The launcher's gates: `tests/test_mcp_cli.py`.

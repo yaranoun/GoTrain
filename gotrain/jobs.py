@@ -543,12 +543,15 @@ def launch_run(task: str, config: dict, hypothesis: str, budget: float = 10.0, p
         raise JobError(f"config is not JSON-serializable: {e}") from None
     from gotrain import runs
     from gotrain import session as sess
+    from gotrain.engine import data
 
     try:  # the checks runs.launch makes (keys, ranges, backbone/weights), before a GPU job is started
         runs.validate_config(task, {**{k: v for k, v in config.items() if k != "time_limit_min"},
                                     "time_limit_min": sess.pots(budget)["R"]})
     except runs.ConfigError as e:
         raise JobError(f"invalid config: {e}") from None
+    except (data.CacheMissing, data.StaleCache) as e:
+        raise JobError(f"{task} has no usable data cache yet: run build_cache first ({e})") from None
     argv = [sys.executable, "-m", "gotrain.jobs", "train-run", f"--task={task}", f"--config={cfg}",
             f"--hypothesis={hypothesis.strip()}", f"--budget={float(budget)}", f"--stage={stage}"]
     if parent_run_id:
