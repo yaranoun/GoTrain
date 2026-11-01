@@ -1,0 +1,9 @@
+{
+  "task": "m-SA-crop-type",
+  "backbone": "resnet34",
+  "weights": "imagenet",
+  "decoder": "unet",
+  "epochs": 20,
+  "seed": 1,
+  "time_limit_min": 6.0
+}
