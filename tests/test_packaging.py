@@ -23,10 +23,11 @@ def test_metadata_for_pypi():
     assert PROJECT["readme"] == "README.md" and (REPO / "README.md").is_file()
     assert set(PROJECT["urls"]) == {"Homepage", "Repository", "Documentation", "Issues"}
     assert all(u.startswith("https://github.com/yaranoun/GoTrain") for u in PROJECT["urls"].values())
-    assert PROJECT["scripts"] == {"gotrain-mcp": "gotrain.mcp_cli:main"}
+    assert PROJECT["scripts"] == {"gotrain": "gotrain.cli:main", "gotrain-mcp": "gotrain.mcp_cli:main"}
     # PEP 639 license expressions need setuptools >= 77, and License :: classifiers are then refused
     assert CONF["build-system"]["requires"] == ["setuptools>=77"]
     assert not any(c.startswith("License ::") for c in PROJECT["classifiers"])
+    assert PROJECT["requires-python"] == ">=3.12"  # 3.11 resolves geobench 1.0 -> pandas<2 with numpy 2 (broken)
     py = f"Programming Language :: Python :: {sys.version_info.major}.{sys.version_info.minor}"
     assert py in PROJECT["classifiers"], f"the suite runs on a Python the classifiers do not list: {py}"
 

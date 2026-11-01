@@ -7,7 +7,8 @@
 # 2. builds the sdist, then the wheel from that sdist (python -m build, in a fresh virtualenv);
 # 3. twine check --strict, then scripts/check_dist.py (contents, secrets, metadata, README as the PyPI page);
 # 4. installs the wheel in another fresh virtualenv (CPU torch first), outside the repository, with a clean
-#    environment, and runs gotrain-mcp --version, gotrain-mcp --check and one MCP client call over stdio.
+#    environment, and runs gotrain-mcp --version, gotrain-mcp --check and one MCP client call over stdio, then
+#    gotrain --version, gotrain mcp --version and gotrain train's preflight (no dataset, no GPU, no AWS credentials).
 # CPU only; every folder it writes is under a temporary directory except OUT_DIR. Upload is a separate, manual step
 # (docs/MCP.md, "Releases").
 set -euo pipefail
@@ -41,8 +42,9 @@ V="$WORK/venv/bin"
 "$V/pip" install -q torch torchvision --index-url "$TORCH_INDEX"
 "$V/pip" install -q "$OUT"/gotrain-*.whl
 cd "$WORK"                                                  # never the repository: nothing imports from it
-clean=(env -i HOME="$HOME" PATH="$V:/usr/bin:/bin" LANG=C.UTF-8 GOTRAIN_HOME="$WORK/home"
-       GOTRAIN_STATE_DIR="$WORK/state")
+mkdir -p "$WORK/userhome"
+clean=(env -i HOME="$WORK/userhome" PATH="$V:/usr/bin:/bin" LANG=C.UTF-8 GOTRAIN_HOME="$WORK/home"
+       GOTRAIN_STATE_DIR="$WORK/state" GEO_BENCH_DIR="$WORK/geobench" AWS_EC2_METADATA_DISABLED=true)
 "${clean[@]}" gotrain-mcp --version
 "${clean[@]}" gotrain-mcp --check | tee "$WORK/check.json"
 "${clean[@]}" python -I - "$V/gotrain-mcp" <<'EOF'
@@ -63,6 +65,18 @@ print(f"stdio client: server {init.serverInfo.name} {init.serverInfo.version}, {
       f"list_tasks isError={res.isError}: {len(tasks)} tasks")
 assert not res.isError and len(tools.tools) == 27 and "m-eurosat" in tasks
 EOF
+echo "== gotrain command"
+"${clean[@]}" gotrain --version
+"${clean[@]}" gotrain mcp --version
+set +e
+"${clean[@]}" gotrain train m-eurosat --budget 1 2> "$WORK/train-preflight.txt"
+rc=$?
+set -e
+cat "$WORK/train-preflight.txt"
+[ "$rc" = 2 ] && grep -q "m-eurosat is not downloaded" "$WORK/train-preflight.txt" \
+    && grep -q "no NVIDIA GPU" "$WORK/train-preflight.txt" && grep -q "no AWS credentials" "$WORK/train-preflight.txt" \
+    && ! grep -q Traceback "$WORK/train-preflight.txt" || { echo "gotrain train: unexpected preflight (exit $rc)" >&2; exit 1; }
+"${clean[@]}" gotrain train m-eurosat -- --help | grep -q -- "--session-id"
 "$V/python" -I -c "import gotrain, sys; assert 'site-packages' in gotrain.__file__, gotrain.__file__; print('imported from', gotrain.__file__)"
 "$V/pip" show -f gotrain | sed -n '1,12p'
 echo "== OK: $(cd "$OUT" && ls) (from $SHA)"

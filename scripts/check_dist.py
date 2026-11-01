@@ -96,7 +96,7 @@ def _scan(name: str, data: bytes, problems: list, review: dict) -> None:
 def _metadata(text: str, readme: str, where: str, problems: list) -> dict:
     msg = Parser().parsestr(text)
     want = {"Name": "gotrain", "License-Expression": "MIT", "Description-Content-Type": "text/markdown",
-            "Requires-Python": ">=3.11"}
+            "Requires-Python": ">=3.12"}
     for k, v in want.items():
         if (msg.get(k) or "").strip() != v:
             problems.append(f"{where}: {k} is {msg.get(k)!r}, want {v!r}")
@@ -185,8 +185,9 @@ def main(argv=None) -> int:
         if info + "licenses/LICENSE" not in names:
             problems.append("wheel: dist-info/licenses/LICENSE missing")
         ep = z.read(info + "entry_points.txt").decode() if info + "entry_points.txt" in names else ""
-        if "gotrain-mcp = gotrain.mcp_cli:main" not in ep:
-            problems.append("wheel: console script gotrain-mcp = gotrain.mcp_cli:main missing")
+        for script in ("gotrain = gotrain.cli:main", "gotrain-mcp = gotrain.mcp_cli:main"):
+            if script not in ep:
+                problems.append(f"wheel: console script {script} missing")
         if "Root-Is-Purelib: true" not in z.read(info + "WHEEL").decode():
             problems.append("wheel: not pure Python")
         report["wheel_meta"] = _metadata(z.read(info + "METADATA").decode(), readme, "wheel METADATA", problems)

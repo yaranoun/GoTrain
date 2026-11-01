@@ -41,7 +41,7 @@ never a test split).
 ## Install
 
 ```bash
-pip install "git+https://github.com/yaranoun/GoTrain.git"           # main (Python >= 3.11)
+pip install "git+https://github.com/yaranoun/GoTrain.git"           # main (Python >= 3.12)
 pip install "git+https://github.com/yaranoun/GoTrain.git@v1.0.0"    # a tagged release
 gotrain-mcp --version
 GOTRAIN_WORKSPACE=/path/to/GoTrain/workspace gotrain-mcp --check    # resolved folders + tool count, exit 0 if usable
@@ -50,6 +50,24 @@ GOTRAIN_WORKSPACE=/path/to/GoTrain/workspace gotrain-mcp --check    # resolved f
 Until the `s2` branch is merged into `main` and `v1.0.0` is tagged, install with `...GoTrain.git@s2` (the ref the
 fresh-virtualenv check below used). On a CPU-only machine install CPU torch first (`pip install torch torchvision --index-url
 https://download.pytorch.org/whl/cpu`), or pip pulls the CUDA build.
+
+The package installs two commands. `gotrain-mcp` is the MCP server. `gotrain` is the user-facing command, a thin
+wrapper around the same modules:
+
+| Command | Runs | Needs |
+|---|---|---|
+| `gotrain train <task> --budget MIN [--dry-run] [...]` | `python -m gotrain.run --task <task> ...`; other flags (`--arm`, `--phases`, `--session-id`, ...) pass through; `gotrain train <task> -- --help` shows them | the dataset downloaded, an NVIDIA GPU (not for `--dry-run`, which launches nothing), AWS credentials with Bedrock access to `eu.anthropic.claude-sonnet-5-5` in `eu-central-1` |
+| `gotrain mcp [--http ...] [--check]` | `gotrain-mcp` | nothing more: CPU is enough for the read tools |
+| `gotrain download <task>` | `python -m gotrain.engine.download <task>` (GEO-Bench from Hugging Face into `GEO_BENCH_DIR`) | network, disk |
+| `gotrain --version` | | |
+
+`gotrain train` checks before it starts and prints one line per problem (exit 2): unknown task, no `--budget` for a
+new session, dataset not downloaded, no GPU, no AWS credentials. Installed from pip, it gets the same `GOTRAIN_HOME`
+defaults as `gotrain-mcp`: the results workspace `~/.gotrain/workspace` is a sandbox, so `train` runs the dev arm and the
+test split is never opened (finalize refuses there). In a source checkout it adds nothing to `python -m gotrain.run`,
+so set `GOTRAIN_WORKSPACE` to a sandbox first, as for `gotrain.run`. The other module commands (`python -m
+gotrain.report`, `verify`, `registry`, `store`, `model_card`) are source-checkout tools: on a pip install they
+default to `<site-packages>/workspace` unless `GOTRAIN_WORKSPACE` is set.
 
 An installed package lives in site-packages, so nothing defaults to it: `gotrain-mcp` fills every unset folder under
 `GOTRAIN_HOME` (default `~/.gotrain`): results `~/.gotrain/workspace` (created empty), sandbox
