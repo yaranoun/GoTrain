@@ -106,6 +106,11 @@ def _check_workspaces() -> None:
 
 
 _check_workspaces()
+# Jobs run with cwd = the package root: pin relative path variables to the folders this process resolved, so a job
+# never reads another state dir (GPU lock, test registry), cache or store than the server does.
+os.environ.update({k: str(v) for k, v in (("GOTRAIN_WORKSPACE", gotrain.WORKSPACE), ("GOTRAIN_CACHE", gotrain.CACHE),
+                                          ("GOTRAIN_STATE_DIR", state.STATE_DIR)) if os.environ.get(k)})
+os.environ.update(mcp_config.absolute_paths({k: os.environ[k] for k in mcp_config.PATH_VARS if os.environ.get(k)}))
 
 
 @asynccontextmanager
@@ -194,9 +199,8 @@ def _image(png: bytes) -> Image:
 
 def _child_env(workspace: Path) -> dict:
     env = {k: v for k, v in os.environ.items() if k not in (state.HOLDS_GPU_ENV, state.LEASE_ENV)}
-    env.update(GOTRAIN_WORKSPACE=str(workspace), GOTRAIN_MCP_WORKSPACE=str(jobs.JOB_WS), PYTHONUNBUFFERED="1",
-               PYTHONPATH=os.pathsep.join(p for p in (str(REPO), os.environ.get("PYTHONPATH")) if p))
-    return env
+    env.update(GOTRAIN_WORKSPACE=str(workspace), GOTRAIN_MCP_WORKSPACE=str(jobs.JOB_WS), PYTHONUNBUFFERED="1")
+    return mcp_config.set_pythonpath(env)
 
 
 def _child_error(res: subprocess.CompletedProcess) -> str:

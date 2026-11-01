@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,9 +7,25 @@ name = "gotrain"
 version = "1.0.0"
 description = "An agent that trains Earth-observation models on GEO-Bench tasks on its own, served over MCP"
 readme = "README.md"
-requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.12"
+keywords = ["mcp", "model-context-protocol", "geospatial", "earth-observation", "remote-sensing", "sentinel-2",
+            "geo-bench", "automl", "agent"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: GIS",
+    "Topic :: Scientific/Engineering :: Image Recognition",
+]
+# Lower bounds = the stack the suite and the release check run on. Older ones resolve to a broken mix (e.g. geobench
+# 1.0 pins pandas<2, which then meets numpy 2: torchgeo.models fails to import).
 dependencies = [
-    "geobench",
+    "geobench>=1.1",
     "h5py",
     "huggingface_hub",
     "strands-agents==0.3.0",
@@ -17,20 +33,25 @@ dependencies = [
     "strands-agents-tools",
     "torch",
     "torchvision",
-    "timm",
-    "torchgeo",
-    "numpy",
-    "pandas",
+    "timm>=1.0",
+    "torchgeo>=0.10",
+    "segmentation-models-pytorch>=0.6",
+    "numpy>=2",
+    "pandas>=2",
+    "pillow",
     "matplotlib",
     "scikit-learn",
     "boto3",
 ]
 
 [project.urls]
+Homepage = "https://github.com/yaranoun/GoTrain"
 Repository = "https://github.com/yaranoun/GoTrain"
 Documentation = "https://github.com/yaranoun/GoTrain/blob/main/docs/MCP.md"
+Issues = "https://github.com/yaranoun/GoTrain/issues"
 
 [project.scripts]
+gotrain = "gotrain.cli:main"
 gotrain-mcp = "gotrain.mcp_cli:main"
 
 [tool.setuptools.packages.find]

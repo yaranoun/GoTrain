@@ -60,6 +60,9 @@ def test_a_source_checkout_keeps_the_repository_defaults():
     ({"GOTRAIN_MCP_WORKSPACE": "<results>/sub"}, "overlaps the results workspace"),
     ({"GOTRAIN_MCP_WORKSPACE": "<tmp>/sandbox"}, "sits next to the results workspace"),
     ({"GOTRAIN_STATE_DIR": "<tmp>/results-file"}, "GOTRAIN_STATE_DIR="),
+    ({"GOTRAIN_MCP_TEXT_CAP": "6000\u00b2"}, "GOTRAIN_MCP_TEXT_CAP must be a whole number"),
+    ({"GOTRAIN_CACHE": "<tmp>/results-file"}, "GOTRAIN_CACHE="),
+    ({"GOTRAIN_STORE_ROOT": "<tmp>/results-file"}, "GOTRAIN_STORE_ROOT="),
 ])
 def test_bad_configurations_stop_before_the_server_starts(tmp_path, extra, msg):
     (tmp_path / "results").mkdir()
@@ -83,6 +86,7 @@ def test_check_prints_the_configuration_and_the_tools(tmp_path):
         out = json.loads(res.stdout)
         assert out["tools"] == n and out["operator"] == (operator == "1") and out["version"] == mcp_config.version()
         assert out["sandbox"] == str((tmp_path / "mcp" / "workspace").resolve())
+        assert set(out["libraries"]) >= {"torch", "torchgeo", "numpy", "pandas"} and out["cuda"] in (True, False)
     assert (tmp_path / "mcp" / "workspace" / "inputs").is_dir()
 
 
@@ -145,3 +149,36 @@ def test_the_launcher_never_imports_a_gotrain_from_the_client_cwd(tmp_path):
     probe = subprocess.run([PY, "-c", "import gotrain.mcp_cli as c, os; e = c._env(); print(e['PYTHONPATH'])"],
                            cwd=REPO, capture_output=True, text=True, timeout=60)
     assert probe.stdout.split(os.pathsep)[0].strip() == str(REPO)
+
+
+def test_the_launcher_makes_path_variables_absolute(tmp_path):
+    """MCP client configs do not expand ~, and jobs run with cwd = the package root: gotrain-mcp hands the server
+    absolute folders, so --check, the server and every job mean the same one."""
+    (tmp_path / "home" / "ws").mkdir(parents=True)
+    (tmp_path / "cwd").mkdir()
+    env = {**_env(tmp_path), "HOME": str(tmp_path / "home"), "GOTRAIN_WORKSPACE": "~/ws", "GOTRAIN_CACHE": "~/cache",
+           "GOTRAIN_STATE_DIR": "rel-state", "GOTRAIN_MCP_WORKSPACE": "../mcp/workspace"}
+    probe = "import gotrain.mcp_cli as c, json; print(json.dumps(c._env()))"
+    res = subprocess.run([PY, "-c", probe], cwd=tmp_path / "cwd", env=env, capture_output=True, text=True, timeout=60)
+    out = json.loads(res.stdout)
+    assert out["GOTRAIN_WORKSPACE"] == str(tmp_path / "home" / "ws") and out["GOTRAIN_CACHE"] == str(tmp_path / "home" / "cache")
+    assert out["GOTRAIN_STATE_DIR"] == str(tmp_path / "cwd" / "rel-state")
+    assert out["GOTRAIN_MCP_WORKSPACE"] == str(tmp_path / "mcp" / "workspace")
+    res = subprocess.run([PY, "-m", "gotrain.mcp_cli", "--check"], cwd=tmp_path / "cwd", env=env, capture_output=True,
+                         text=True, timeout=300)
+    assert res.returncode == 0, res.stderr[-1500:]
+    assert json.loads(res.stdout)["results"] == str(tmp_path / "home" / "ws")
+
+
+def test_a_server_started_directly_refuses_a_tilde_it_would_not_expand(tmp_path):
+    env = {"GOTRAIN_WORKSPACE": "~/ws", "GOTRAIN_CACHE": str(tmp_path / "c"), "GOTRAIN_MCP_WORKSPACE": str(tmp_path / "m" / "w")}
+    assert any("starts with '~'" in p for p in mcp_config.check(env, exists=False, fill_defaults=False))
+    assert not any("'~'" in p for p in mcp_config.check(mcp_config.absolute_paths(env), exists=False, fill_defaults=False))
+
+
+def test_pythonpath_names_the_checkout_only_in_a_source_checkout(monkeypatch):
+    env = mcp_config.set_pythonpath({"PYTHONPATH": os.pathsep.join([str(REPO), "/x"])})
+    assert env["PYTHONPATH"].split(os.pathsep) == [str(REPO), "/x"]  # first, once
+    monkeypatch.setattr(mcp_config, "source_checkout", lambda: False)
+    assert mcp_config.set_pythonpath({"PYTHONPATH": "/x"}) == {"PYTHONPATH": "/x"}
+    assert mcp_config.set_pythonpath({}) == {}  # site-packages never goes ahead of the stdlib

@@ -16,21 +16,18 @@ import json
 import os
 import subprocess
 import sys
-from pathlib import Path
 
-import gotrain
 from gotrain import mcp_config
 
 
 def _env() -> dict:
-    """The server's environment: defaults filled, and this very gotrain first on PYTHONPATH (with python -P, the
-    client's cwd never shadows it: a folder holding another gotrain/ is not imported)."""
-    env = dict(os.environ)
+    """The server's environment: path variables absolute (MCP clients do not expand ~, and jobs run with cwd = the
+    package root), defaults filled, and in a source checkout this very gotrain first on PYTHONPATH (with python -P,
+    the client's cwd never shadows it: a folder holding another gotrain/ is not imported)."""
+    env = mcp_config.absolute_paths(dict(os.environ))
     for k, v in mcp_config.defaults(env).items():
         env.setdefault(k, v)
-    root = str(Path(gotrain.__file__).resolve().parent.parent)
-    env["PYTHONPATH"] = os.pathsep.join(p for p in (root, env.get("PYTHONPATH")) if p)
-    return env
+    return mcp_config.set_pythonpath(env)
 
 
 def main(argv=None) -> None:
@@ -54,16 +51,21 @@ def main(argv=None) -> None:
               f"GOTRAIN_MCP_WORKSPACE or GOTRAIN_MCP_INPUT_DIR to a writable folder)", file=sys.stderr)
         raise SystemExit(2) from None
     if a.check:
-        probe = ("import gotrain.mcp_server as m, json; "
-                 "print(json.dumps(sorted(t.name for t in m.mcp._tool_manager.list_tools())))")
+        # the whole stack is imported, not only the server: a broken mix (e.g. pandas built for numpy 1) fails here
+        probe = ("import gotrain.mcp_server as m, json, importlib.metadata as md; "
+                 "import numpy, pandas, torch, torchgeo.models, timm, segmentation_models_pytorch; "
+                 "libs = {p: md.version(p) for p in ('torch', 'torchgeo', 'timm', 'segmentation-models-pytorch', "
+                 "'numpy', 'pandas', 'geobench', 'mcp')}; "
+                 "print(json.dumps([sorted(t.name for t in m.mcp._tool_manager.list_tools()), libs, "
+                 "torch.cuda.is_available()]))")
         res = subprocess.run([sys.executable, "-P", "-c", probe], env=env, capture_output=True, text=True, timeout=300)
         conf = mcp_config.resolved(env)
         if res.returncode != 0:
             err = (res.stderr.strip().splitlines() or [f"exit {res.returncode}"])[-1]
             print(json.dumps(conf, indent=1), f"\ngotrain-mcp: the server does not start: {err}", file=sys.stderr)
             raise SystemExit(1)
-        tools = json.loads(res.stdout.strip().splitlines()[-1])
-        print(json.dumps({**conf, "tools": len(tools), "tool_names": tools}, indent=1))
+        tools, libs, cuda = json.loads(res.stdout.strip().splitlines()[-1])
+        print(json.dumps({**conf, "cuda": cuda, "libraries": libs, "tools": len(tools), "tool_names": tools}, indent=1))
         return
     args = [sys.executable, "-P", "-m", "gotrain.mcp_server"]
     if a.http:

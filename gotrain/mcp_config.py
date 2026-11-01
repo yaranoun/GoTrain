@@ -35,6 +35,12 @@ ENV = {  # name: (default, meaning)
     "GEO_BENCH_DIR": ("GEO-Bench's default", "the dataset folder"),
 }
 TEXT_CAP_MIN = 500
+# variables that name folders: gotrain-mcp makes them absolute (and expands ~) before the server starts, so the
+# launcher, the server and every job (started with cwd = the package root) mean the same folder
+PATH_VARS = ("GOTRAIN_HOME", "GOTRAIN_WORKSPACE", "GOTRAIN_MCP_WORKSPACE", "GOTRAIN_MCP_INPUT_DIR",
+             "GOTRAIN_MCP_MAIN_WORKSPACE", "GOTRAIN_CACHE", "GOTRAIN_STATE_DIR", "GOTRAIN_STORE_ROOT", "GEO_BENCH_DIR",
+             "HF_HOME", "TORCH_HOME")
+NO_TILDE = ("GOTRAIN_WORKSPACE", "GOTRAIN_CACHE")  # gotrain/__init__.py resolves these without expanding ~
 
 
 def source_checkout() -> bool:
@@ -75,6 +81,24 @@ def defaults(env=None) -> dict[str, str]:
     h = home(env)
     return {"GOTRAIN_WORKSPACE": str(h / "workspace"), "GOTRAIN_MCP_WORKSPACE": str(h / "mcp" / "workspace"),
             "GOTRAIN_CACHE": str(h / "cache")}
+
+
+def absolute_paths(env: dict) -> dict:
+    """env with every set path variable absolute and ~-expanded (relative ones against the current folder)."""
+    out = dict(env)
+    for k in PATH_VARS:
+        if out.get(k):
+            out[k] = str(Path(out[k]).expanduser().resolve())
+    return out
+
+
+def set_pythonpath(env: dict) -> dict:
+    """A child's PYTHONPATH: this checkout first in a source checkout (no other gotrain can shadow it); unchanged for an
+    installed package (site-packages is on sys.path already, and on PYTHONPATH it would come before the stdlib)."""
+    if source_checkout():
+        rest = [p for p in (env.get("PYTHONPATH") or "").split(os.pathsep) if p and p != str(REPO)]
+        env["PYTHONPATH"] = os.pathsep.join([str(REPO), *rest])
+    return env
 
 
 def _path(env, name: str, fallback: Path) -> Path:
@@ -128,11 +152,15 @@ def check(env=None, exists: bool = True, fill_defaults: bool = True) -> list[str
         out.append("operator mode needs a source checkout (git clone + pip install -e .): finalize, arm main and the "
                    "registry act on <repo>/workspace, never on an installed package; unset GOTRAIN_MCP_OPERATOR")
     cap = env.get("GOTRAIN_MCP_TEXT_CAP", "")
-    if cap and not (cap.isdigit() and int(cap) >= TEXT_CAP_MIN):
+    if cap and not (cap.isascii() and cap.isdigit() and int(cap) >= TEXT_CAP_MIN):
         out.append(f"GOTRAIN_MCP_TEXT_CAP must be a whole number of characters >= {TEXT_CAP_MIN}, not {cap!r}")
     store = env.get("GOTRAIN_STORE", "")
     if store and store != "local" and not store.startswith("s3://"):
         out.append(f"GOTRAIN_STORE must be 'local' or s3://bucket/prefix, not {store!r}")
+    for var in NO_TILDE:
+        if (env.get(var) or "").startswith("~"):
+            out.append(f"{var}={env[var]!r} starts with '~', which the server does not expand: use an absolute path, "
+                       f"or start the server with gotrain-mcp (it expands ~ and relative paths)")
     for var, what in (("GOTRAIN_WORKSPACE", "the results folder, e.g. a clone's workspace/"),
                       ("GOTRAIN_CACHE", "the data cache folder")):
         if not source_checkout() and not env.get(var):
@@ -147,10 +175,13 @@ def check(env=None, exists: bool = True, fill_defaults: bool = True) -> list[str
     if exists and explicit and not Path(r["results"]).is_dir():
         out.append(f"GOTRAIN_WORKSPACE={r['results']} does not exist: point it at a GoTrain results folder (a "
                    f"clone's workspace/) or create it (an empty folder serves an empty workspace)")
-    for name, var in (("state", "GOTRAIN_STATE_DIR"), ("sandbox", "GOTRAIN_MCP_WORKSPACE")):
+    for name, var in (("state", "GOTRAIN_STATE_DIR"), ("sandbox", "GOTRAIN_MCP_WORKSPACE"), ("cache", "GOTRAIN_CACHE")):
         p = Path(r[name])
         if exists and p.exists() and not p.is_dir():
             out.append(f"{var}={p} is not a folder")
+    root = env.get("GOTRAIN_STORE_ROOT")
+    if exists and root and Path(root).expanduser().exists() and not Path(root).expanduser().is_dir():
+        out.append(f"GOTRAIN_STORE_ROOT={root} is not a folder")
     inputs = env.get("GOTRAIN_MCP_INPUT_DIR")
     if exists and inputs and Path(inputs).expanduser().exists() and not Path(inputs).expanduser().is_dir():
         out.append(f"GOTRAIN_MCP_INPUT_DIR={inputs} is not a folder")

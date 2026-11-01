@@ -196,8 +196,8 @@ def start(kind: str, argv: list[str], *, workspace: str | Path | None = None, gp
            "returncode": None, "log": str(log)}
     _write(job_dir, job)
     env = {k: v for k, v in os.environ.items() if k not in (state.HOLDS_GPU_ENV, state.LEASE_ENV)}
-    env.update(GOTRAIN_WORKSPACE=str(ws), GOTRAIN_MCP_WORKSPACE=str(JOB_WS), PYTHONUNBUFFERED="1",
-               PYTHONPATH=os.pathsep.join(p for p in (str(REPO), os.environ.get("PYTHONPATH")) if p))
+    env.update(GOTRAIN_WORKSPACE=str(ws), GOTRAIN_MCP_WORKSPACE=str(JOB_WS), PYTHONUNBUFFERED="1")
+    mcp_config.set_pythonpath(env)
     env[JOB_DIR_ENV] = str(job_dir)
     try:
         with log.open("ab") as out:
@@ -356,8 +356,8 @@ def _stop_job_runs(job_dir: Path, job: dict, reason: str = "") -> dict:
     if not mine:
         return job
     env = {k: v for k, v in os.environ.items() if k not in (state.HOLDS_GPU_ENV, state.LEASE_ENV, JOB_DIR_ENV)}
-    env.update(GOTRAIN_WORKSPACE=str(ws), GOTRAIN_MCP_WORKSPACE=str(JOB_WS), PYTHONUNBUFFERED="1",
-               PYTHONPATH=os.pathsep.join(p for p in (str(REPO), os.environ.get("PYTHONPATH")) if p))
+    env.update(GOTRAIN_WORKSPACE=str(ws), GOTRAIN_MCP_WORKSPACE=str(JOB_WS), PYTHONUNBUFFERED="1")
+    mcp_config.set_pythonpath(env)
     why = (reason or "").strip()[:REASON_MAX] or f"{job['kind']} job {job['job_id']} {job['status']} (MCP)"
     try:
         res = subprocess.run([sys.executable, "-m", "gotrain.jobs", "stop-session-runs", f"--session-id={sid}",

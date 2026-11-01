@@ -41,7 +41,7 @@ never a test split).
 ## Install
 
 ```bash
-pip install "git+https://github.com/yaranoun/GoTrain.git"           # main (Python >= 3.11)
+pip install "git+https://github.com/yaranoun/GoTrain.git"           # main (Python >= 3.12)
 pip install "git+https://github.com/yaranoun/GoTrain.git@v1.0.0"    # a tagged release
 gotrain-mcp --version
 GOTRAIN_WORKSPACE=/path/to/GoTrain/workspace gotrain-mcp --check    # resolved folders + tool count, exit 0 if usable
@@ -50,6 +50,24 @@ GOTRAIN_WORKSPACE=/path/to/GoTrain/workspace gotrain-mcp --check    # resolved f
 Until the `s2` branch is merged into `main` and `v1.0.0` is tagged, install with `...GoTrain.git@s2` (the ref the
 fresh-virtualenv check below used). On a CPU-only machine install CPU torch first (`pip install torch torchvision --index-url
 https://download.pytorch.org/whl/cpu`), or pip pulls the CUDA build.
+
+The package installs two commands. `gotrain-mcp` is the MCP server. `gotrain` is the user-facing command, a thin
+wrapper around the same modules:
+
+| Command | Runs | Needs |
+|---|---|---|
+| `gotrain train <task> --budget MIN [--dry-run] [...]` | `python -m gotrain.run --task <task> ...`; other flags (`--arm`, `--phases`, `--session-id`, ...) pass through; `gotrain train <task> -- --help` shows them | the dataset downloaded, an NVIDIA GPU (not for `--dry-run`, which launches nothing), AWS credentials with Bedrock access to `eu.anthropic.claude-sonnet-5-5` in `eu-central-1` |
+| `gotrain mcp [--http ...] [--check]` | `gotrain-mcp` | nothing more: CPU is enough for the read tools |
+| `gotrain download <task>` | `python -m gotrain.engine.download <task>` (GEO-Bench from Hugging Face into `GEO_BENCH_DIR`) | network, disk |
+| `gotrain --version` | | |
+
+`gotrain train` checks before it starts and prints one line per problem (exit 2): unknown task, no `--budget` for a
+new session, dataset not downloaded, no GPU, no AWS credentials. Installed from pip, it gets the same `GOTRAIN_HOME`
+defaults as `gotrain-mcp`: the results workspace `~/.gotrain/workspace` is a sandbox, so `train` runs the dev arm and the
+test split is never opened (finalize refuses there). In a source checkout it adds nothing to `python -m gotrain.run`,
+so set `GOTRAIN_WORKSPACE` to a sandbox first, as for `gotrain.run`. The other module commands (`python -m
+gotrain.report`, `verify`, `registry`, `store`, `model_card`) are source-checkout tools: on a pip install they
+default to `<site-packages>/workspace` unless `GOTRAIN_WORKSPACE` is set.
 
 An installed package lives in site-packages, so nothing defaults to it: `gotrain-mcp` fills every unset folder under
 `GOTRAIN_HOME` (default `~/.gotrain`): results `~/.gotrain/workspace` (created empty), sandbox
@@ -145,9 +163,19 @@ npx @modelcontextprotocol/inspector gotrain-mcp
 - **Release.** Bump `version` in `pyproject.toml`, merge to `main`, then tag that commit and push the tag:
   `git tag -a v1.0.0 -m "GoTrain 1.0.0" && git push origin v1.0.0`. Clients pin it with
   `pip install "git+https://github.com/yaranoun/GoTrain.git@v1.0.0"`. A tag is never moved; a fix is a new version.
+- **PyPI.** `scripts/build_release.sh` builds the committed `HEAD` (via `git archive`, so no untracked or ignored
+  file can get in) in a clean virtualenv: the sdist, then the wheel built from that sdist, into `dist/`. It runs
+  `twine check --strict` and `scripts/check_dist.py`, which fails on any file outside the package, README, LICENSE
+  and pyproject (no workspace, data, caches, sandbox, tests, logs or checkpoints), on anything that looks like a
+  credential, on wrong metadata (name, version, MIT license, project URLs, no direct-URL dependency), and on a README
+  that does not render as the PyPI page. Then it installs the wheel in a fresh virtualenv outside the repository and
+  runs `gotrain-mcp --version`, `gotrain-mcp --check` and one MCP client call over stdio. CPU only; it never uploads.
+  The maintainer uploads with their own PyPI token, from their own terminal:
+  `python -m twine upload dist/gotrain-<version>.tar.gz dist/gotrain-<version>-py3-none-any.whl`. PyPI accepts each
+  version once: a fix is a new version. The PyPI page shows the README as it was at the build.
 - **CI.** `ci/github-actions-tests.yml` is a GitHub Actions workflow for every push (except the chain's `run/**`
   results branches) and pull request: CPU torch, `pip install -e . pytest`, `gotrain-mcp --check`, then
-  `python -m pytest -q tests/` (synthetic data; no GPU, no test split; 207 passed with no local cache). To switch it
+  `python -m pytest -q tests/` (synthetic data; no GPU, no test split; 216 passed). To switch it
   on, copy it to `.github/workflows/tests.yml` and push with a token that has the `workflow` scope (or add the file in
   the GitHub web UI): the hackathon token cannot create workflow files.
 - **Docker** (optional). `Dockerfile`: CPU, `gotrain-mcp --http --host 0.0.0.0 --port 8765`, everything under the
