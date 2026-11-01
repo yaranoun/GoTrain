@@ -1,3 +1,5 @@
+> Build record from the hackathon (31 Oct – 1 Nov 2026), kept verbatim for traceability; not needed to use GoTrain. Start at [README.md](../README.md).
+
 # GoTrain — build plan
 
 Hackathon: 31 Oct – 1 Nov 2026. Each step has a **gate**: don't start the next step until it passes.

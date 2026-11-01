@@ -484,9 +484,9 @@ JSON report go to `.sandbox/step9/`). Gate tests without data: `tests/test_step9
   `registry/registry.jsonl`, `playbook/playbook.jsonl`. Every put/get is logged with its sha256 to
   `WORKSPACE/store_log.jsonl`; `fetch-dataset` checks the zip against the last push. CLI: `python -m gotrain.store
   doctor | push-dataset <task> | fetch-dataset <task> | push-models [<task>] | ls [<prefix>]`.
-  `doctor` = identity + put/get/delete round trip. On 31 Oct the role `gotrain-hackathon-role` can list
-  `s3://gotrain-575331248402-eu-central-1` but has **no `s3:PutObject`** (AccessDenied), so the S3 backend waits
-  for an IAM grant (Put/Get/DeleteObject on that bucket); `LocalStore` works.
+  `doctor` = identity + put/get/delete round trip. On 31 Oct the instance role could list the team bucket but had
+  no `s3:PutObject` (AccessDenied). The organisers then chose the local store for the hackathon, so this deployment
+  uses `LocalStore`, and `S3Store` is kept ready.
 - **Model registry** (`gotrain/registry.py`, `WORKSPACE/registry.jsonl`, append-only, last line per `model_id` wins):
   `model_id` = `<task>:v<N>`, `run_id`, `kind` (checkpoint | composite), `checkpoint_sha256`, `members` (composites:
   run ids, member checkpoint hashes, TTA flags), `derived_from`, `config`, `val` (from val_stats.npz), `test`

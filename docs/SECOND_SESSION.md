@@ -1,3 +1,5 @@
+> Build record from the hackathon (31 Oct – 1 Nov 2026), kept verbatim for traceability; not needed to use GoTrain. Start at [README.md](../README.md).
+
 # Kickoff — second coding session (31 Oct, from ~20:30 Beirut; deadline T = 11:00 on 1 Nov)
 
 You are the **second coding session** for GoTrain. The build agent works in `~/GoTrain` on `main` and owns the

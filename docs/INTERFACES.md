@@ -1,3 +1,5 @@
+> Build record from the hackathon (31 Oct – 1 Nov 2026), kept verbatim for traceability; not needed to use GoTrain. Start at [README.md](../README.md).
+
 # GoTrain — interfaces for the creative phase (Steps 6–10) · v2
 
 This is the contract between the **build agent** and the **second coding session**:

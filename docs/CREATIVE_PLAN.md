@@ -1,3 +1,5 @@
+> Build record from the hackathon (31 Oct – 1 Nov 2026), kept verbatim for traceability; not needed to use GoTrain. Start at [README.md](../README.md).
+
 # GoTrain — Creative Phase Plan (Steps 6+)
 
 **Headline: "Every dataset makes the next one easier."**
