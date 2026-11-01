@@ -420,7 +420,7 @@ def predict(image, task: str | None = None, model: str = "", device: str = "cpu"
         except state.Busy as e:
             raise RuntimeError(f"GPU busy, not waiting (use device 'cpu'): {e}") from None
     head = {"task": task, "model_id": spec["model_id"], "run_id": spec["run_id"], "kind": spec["kind"],
-            "tta": flags if spec["kind"] == "composite" else flags[0]}
+            "tta": flags if spec["kind"] == "composite" else flags[0], "device": device}  # the one inference ran on
     if tasks.info(task)["type"] == "classification":
         order = np.argsort(-out, kind="stable")
         probs = {classes[i]: round(float(out[i]), 6) for i in order}
