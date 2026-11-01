@@ -109,6 +109,7 @@ def test_classification_probs_and_every_input_form(world, tmp_path):
     x = VAL[EU]["x"][0]
     ref = predict.predict("val:0", task=EU, model="pt-eu-a")
     assert ref["kind"] == "checkpoint" and ref["model_id"] == "pt-eu-a" and ref["tta"] is False
+    assert ref["device"] == "cpu"  # the device inference ran on (no fallback: cuda either runs on cuda or fails)
     assert set(ref["probs"]) == set(tasks.CLASS_NAMES[EU]) and abs(sum(ref["probs"].values()) - 1) < 1e-4
     assert list(ref["probs"].values()) == sorted(ref["probs"].values(), reverse=True)
     assert len(ref["top"]) == 5 and ref["top"][0] == list(next(iter(ref["probs"].items())))

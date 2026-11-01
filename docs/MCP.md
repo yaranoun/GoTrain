@@ -1,21 +1,22 @@
 # GoTrain over MCP
 
-GoTrain runs as an MCP server, and the whole workflow is reachable through it. A client (GoPilot, Claude Desktop,
-Claude Code, the MCP Inspector or a Strands agent) reads every result, inspects a task, starts the agent on a
-dataset, trains and evaluates a manual run, predicts with a model, builds the report and moves artifacts through the
-store, all with tool calls, without a notebook or a shell on the GPU box. The steps that touch a test split or
-publish (finalize, registry tags, store push) exist only when the operator switches them on.
+GoTrain runs as an MCP server, and the whole workflow is reachable through it. An MCP client (Claude Desktop, Claude
+Code, the MCP Inspector or a Strands agent; the server is designed to plug into GoPilot the same way) reads every
+result, inspects a task, starts the agent on a dataset, trains and evaluates a manual run, predicts with a model,
+builds the report and moves artifacts through the store, all with tool calls, without a notebook or a shell on the
+GPU box. The steps that touch a test split or publish (finalize, registry tags, store push) exist only when the
+operator switches them on.
 
 ## What a GoPilot user can do
 
-With the default server entry, a GoPilot user can browse the tasks, the registered models and their model cards, the
-cross-dataset playbook, the training runs, the agent sessions and their run trees; trace a task's test score back to
-the agent's `launch_training` call and run `gotrain.verify`; predict one image with a production model on the CPU;
-and run work as background jobs in the sandbox workspace (dataset download, cache build, agent sessions, manual
-training runs, evaluations) under the one-GPU-job rule: a GPU job is refused while the GPU is busy, never queued, and
-a finalized task gets no more training. Test scores appear only as the vault recorded them. Operator mode
-(`GOTRAIN_MCP_OPERATOR=1`) adds finalize (each task's one test evaluation), the registry tags and the store push.
-Every tool with its mode and GPU use: [Tools](#tools).
+With the default server entry, a user of any MCP client (GoPilot is the intended host) can browse the tasks, the
+registered models and their model cards, the cross-dataset playbook, the training runs, the agent sessions and their
+run trees; trace a task's test score back to the agent's `launch_training` call and run `gotrain.verify`; predict one
+image with a production model on the CPU; and run work as background jobs in the sandbox workspace (dataset download,
+cache build, agent sessions, manual training runs, evaluations) under the one-GPU-job rule: a GPU job is refused
+while the GPU is busy, never queued, and a finalized task gets no more training. Test scores appear only as the vault
+recorded them. Operator mode (`GOTRAIN_MCP_OPERATOR=1`) adds finalize (each task's one test evaluation), the registry
+tags and the store push. Every tool with its mode and GPU use: [Tools](#tools).
 
 Code: `gotrain/mcp_server.py` (the tools), `gotrain/jobs.py` (background jobs), `gotrain/predict.py` (inference),
 `gotrain/mcp_ops.py` (read operations), `gotrain/trace.py` (score tracing). Launcher and configuration:
@@ -50,8 +51,8 @@ GOTRAIN_WORKSPACE=/path/to/GoTrain/workspace gotrain-mcp --check    # resolved f
 Other sources of the same package: `pip install "git+https://github.com/yaranoun/GoTrain.git@v1.0.0"` (the commit
 the PyPI files were built from) or `...GoTrain.git` (main). On a CPU-only machine install CPU torch first (`pip
 install torch torchvision --index-url https://download.pytorch.org/whl/cpu`), or pip pulls the CUDA build. Python
-3.12 or newer is required: on an older Python, `pip install gotrain` installs 0.0.1, an empty placeholder that
-reserved the name, so use `pip install "gotrain>=1"` there to get a clear error instead.
+3.12 or newer is required; on an older Python pip finds no installable version (1.0.0 requires Python ≥ 3.12, and
+the 0.0.1 name placeholder is yanked).
 
 The package installs two commands. `gotrain-mcp` is the MCP server. `gotrain` is the user-facing command, a thin
 wrapper around the same modules:
@@ -77,8 +78,8 @@ An installed package lives in site-packages, so nothing defaults to it: `gotrain
 
 - **every read tool** on any results folder: point `GOTRAIN_WORKSPACE` at a clone's `workspace/` (ledger, sessions,
   vault, registry, model cards, playbook, profiles are in git);
-- **predict** with a model whose files are present (`checkpoint.pt` in its run folder: on the training machine, or
-  fetched from the artifact store; checkpoints are not in git) and the task's data cache (`download_task`, then
+- **predict** with a model whose files are present (`checkpoint.pt` in its run folder, which exists only on the
+  training machine: checkpoints are not in git) and the task's data cache (`download_task`, then
   `build_cache`);
 - **jobs** on this machine (download, cache build, dev sessions, manual runs, evaluations), under the one-GPU-job rule;
 - **not operator mode**: `gotrain-mcp` refuses `GOTRAIN_MCP_OPERATOR=1` on an installed package (finalize, arm main
@@ -131,17 +132,18 @@ Environment:
 
 ## Clients
 
-**GoPilot / Claude Desktop.** Paste the `mcpServers` block of a file in `examples/` into the client's config (for
-Claude Desktop, `claude_desktop_config.json`):
+**Claude Desktop and other config-file clients.** Paste the `mcpServers` block of a file in `examples/` into the
+client's config (for Claude Desktop, `claude_desktop_config.json`):
 
 - `examples/mcp.json`: the installed `gotrain-mcp`, default mode. Set `GOTRAIN_WORKSPACE` to the results folder and
-  `GOTRAIN_HOME` to where the sandbox and cache may live. GoPilot uses this entry.
+  `GOTRAIN_HOME` to where the sandbox and cache may live. This is the entry meant for GoPilot and other shared
+  clients.
 - `examples/mcp.operator.json`: operator mode (`GOTRAIN_MCP_OPERATOR=1`), for the operator only: it exposes
   finalize. It needs a source checkout (`pip install -e .`); an installed package refuses operator mode. Keep it out
   of shared client configs.
 - `examples/mcp.source.json`: a source checkout without installing (`python -m gotrain.mcp_cli` with `PYTHONPATH`).
 
-When the client does not start from your shell (Claude Desktop, GoPilot services), set `command` to the absolute
+When the client does not start from your shell (Claude Desktop, or a hosted service), set `command` to the absolute
 path of `gotrain-mcp` (`which gotrain-mcp`, for example `/path/to/venv/bin/gotrain-mcp`).
 
 **Claude Code.**
@@ -177,11 +179,10 @@ npx @modelcontextprotocol/inspector gotrain-mcp
   version once: a fix is a new version. The PyPI page shows the README as it was at the build. 1.0.0 is on PyPI
   (uploaded 1 Nov; wheel sha256 `0116c72d…112a`, sdist `e8eb2e22…633e`), built from tag `v1.0.0`
   (branch `release/1.0.0`: main's package code plus the README for PyPI).
-- **CI.** `ci/github-actions-tests.yml` is a GitHub Actions workflow for every push (except the chain's `run/**`
-  results branches) and pull request: CPU torch, `pip install -e . pytest`, `gotrain-mcp --check`, then
-  `python -m pytest -q tests/` (synthetic data; no GPU, no test split; 216 passed). To switch it
-  on, copy it to `.github/workflows/tests.yml` and push with a token that has the `workflow` scope (or add the file in
-  the GitHub web UI): the hackathon token cannot create workflow files.
+- **CI.** `.github/workflows/tests.yml` runs on every push (except the chain's `run/**` results branches) and pull
+  request: CPU torch, `pip install -e . pytest`, `gotrain-mcp --check`, then `python -m pytest -q tests/` (synthetic
+  data; no GPU, no test split). Results: the
+  [Actions tab](https://github.com/yaranoun/GoTrain/actions/workflows/tests.yml).
 - **Docker** (optional). `Dockerfile`: CPU, `gotrain-mcp --http --host 0.0.0.0 --port 8765`, everything under the
   `/data` volume (`GOTRAIN_HOME=/data`: results `/data/workspace`, sandbox `/data/mcp/workspace`, data cache, state,
   local store, datasets `GEO_BENCH_DIR=/data/geobench`, `HF_HOME=/data/hf`, `TORCH_HOME=/data/torch`). Default mode
@@ -207,7 +208,7 @@ docker run --rm -p 8765:8765 -v gotrain-data:/data -v "$PWD/workspace:/data/work
 | Test split | never | once per task, machine-wide, through `finalize` |
 
 Operator tools are registered when the server starts. A default-mode client cannot see them, so it cannot call
-them. GoPilot uses the default entry.
+them. The default entry is the one meant for GoPilot.
 
 ## Tools
 
@@ -684,6 +685,8 @@ agent's own tool call (the same output as `examples/trace_a_score.py`). Not capp
   transcript's `launch_training` call behind each decision run; the session header; the lessons written from the
   session. A task without a vault entry returns `… has no vault entry`.
 - **Guards** re-scores the recorded `test_stats.npz` only. It never opens a test split.
+- On a clone, the ensemble members' `checkpoint.pt` files are absent (`*.pt` is gitignored), so step 2 marks them ✗;
+  every other step runs from the committed files.
 
 Example `{"task": "m-eurosat"}` →
 
@@ -709,6 +712,8 @@ the test touch, registry, the playbook's growth, git freezes).
 
 - **Returns** `exit_code N` (0 ok, 1 a check failed, 2 not found, or neither `session_id` nor `full` given), then
   one line per check, exactly as the CLI prints them. The git checks read the repository's history.
+- On a clone, `artifact_hashes` fails only on the members' gitignored `checkpoint.pt` files; the other checks run
+  from git.
 
 Example `{"full": true}` →
 
@@ -942,9 +947,10 @@ files.
     cache order, canonical Sentinel-2 with B8A after B08) or `"disk"` (all channels in GEO-Bench's on-disk order).
     m-eurosat's 13 channels fit both orders, so `"auto"` refuses them and asks (`error: ValueError: m-eurosat: 13
     channels can be the cache order … or GEO-Bench's on-disk order …; pass channels='cache' or channels='disk'`).
-- **Returns.** Classification: `{task, model_id, run_id, kind, tta, probs: {class: p} (sorted), top: [[class, p] × 5]}`.
-  Segmentation: `{task, model_id, run_id, kind, tta, shape, class_fractions, mask_path, overlay_png_path}` plus the
-  overlay image (true colour next to the mask, ≤ 1024 px).
+- **Returns.** Classification: `{task, model_id, run_id, kind, tta, device, probs: {class: p} (sorted), top:
+  [[class, p] × 5]}`. Segmentation: `{task, model_id, run_id, kind, tta, device, shape, class_fractions, mask_path,
+  overlay_png_path}` plus the overlay image (true colour next to the mask, ≤ 1024 px). `device` is the one
+  inference ran on (`cuda` never falls back to the CPU: it runs on the GPU or fails).
 - **Guards** reads only the val split (`test:` / `train:` inputs are refused). Image files are read only inside the
   input folder: a path outside it (absolute, `../`, a symlink out, the folder itself; `~` is not expanded, so a
   path starting with `~` is a name inside it) is refused before the file is opened or tested for existence, with the same answer for an existing and a missing file. Checkpoint hashes are
@@ -958,7 +964,7 @@ Example `{"image": "val:0", "task": "m-eurosat"}` →
 
 ```
 {"task": "m-eurosat", "model_id": "m-eurosat:v1", "run_id": "m-eurosat-L2-001", "kind": "composite",
- "tta": [false, false, false], "probs": {"Forest": 0.9x, "Pasture": 0.0x, …},
+ "tta": [false, false, false], "device": "cpu", "probs": {"Forest": 0.9x, "Pasture": 0.0x, …},
  "top": [["Forest", 0.9x], ["Pasture", 0.0x], …]}
 ```
 
@@ -1075,8 +1081,8 @@ Example `{"task": "m-eurosat"}` → `{"job_id": "push-…", "kind": "push", "wor
 
 ## The GoPilot example client
 
-`examples/gopilot_client.py` connects to the server over stdio with Strands' `MCPClient` (`gotrain_client()`), in
-default mode. The client forwards its environment to the server.
+`examples/gopilot_client.py` stands in for GoPilot: it connects to the server over stdio with Strands' `MCPClient`
+(`gotrain_client()`), in default mode, the way a Strands host would attach GoTrain. The client forwards its environment to the server.
 
 ```bash
 python examples/gopilot_client.py                         # end-to-end demo on m-eurosat (same as --demo)
@@ -1125,28 +1131,28 @@ server's stderr goes to `<sandbox>/gopilot_server.log` (`--server-log -` shows i
 | trace_score | ok on CPU |
 | verify | ok on CPU |
 | download_task | ok on CPU (no GPU; needs Hugging Face access; refusals in the CPU gates) |
-| build_cache | pending GPU window |
-| start_session | `dry_run=true`: ok on CPU, needs Bedrock (refusals in the CPU gates: arm, budget, session id, finalized task) · real session: pending GPU window |
-| launch_run | pending GPU window (refusals ok on CPU) |
-| evaluate_run | pending GPU window (refusals ok on CPU) |
+| build_cache | ok on GPU (m-nz-cattle, 1 Nov, sandbox: job `cache-20261101T085804Z-ad92`, train + val caches in 10.5 s) |
+| start_session | `dry_run=true`: ok on CPU, needs Bedrock (refusals in the CPU gates: arm, budget, session id, finalized task) · real session: ok on GPU (m-nz-cattle, 1 Nov, sandbox: job `session-20261101T085943Z-ea0d`, arm dev, B 3, level1: 9 runs, exit 0) |
+| launch_run | ok on GPU (m-nz-cattle, 1 Nov, sandbox: job `train-20261101T085817Z-9f1c`, run `m-nz-cattle-0001`, val mIoU 0.780) · refusals ok on CPU |
+| evaluate_run | ok on GPU (m-nz-cattle, 1 Nov, sandbox: job `evaluate-20261101T085922Z-dce2` on `m-nz-cattle-0001`, mIoU 0.780) · refusals ok on CPU |
 | list_jobs | ok on CPU |
 | get_job | ok on CPU |
 | wait_job | ok on CPU |
 | cancel_job | ok on CPU (session runs stopped: CPU stand-ins in the gates) |
 | job_log | ok on CPU |
-| predict | `device="cpu"`: ok on CPU · `device="cuda"`: pending GPU window |
+| predict | `device="cpu"`: ok on CPU · `device="cuda"`: ok on GPU (m-nz-cattle, 1 Nov, sandbox: `val:0` with run `m-nz-cattle-0001`, mask + overlay) |
 | build_report | ok on CPU |
-| store_doctor | local store: ok on CPU · S3: blocked until IAM grants `s3:PutObject` |
+| store_doctor | local store: ok on CPU · S3: implemented, not enabled in this deployment (organisers' decision: file-system store) |
 | store_pull | local store: ok on CPU · S3: fetches only what a push stored there |
 | finalize (operator) | refusals ok on CPU (phase checks before any job; in a sandbox main workspace the job fails with `PermissionError`); the real call is each task's one test touch, made by the operator, never in a test |
 | registry_sync (operator) | ok on CPU |
 | promote (operator) | ok on CPU |
 | archive (operator) | ok on CPU |
-| store_push (operator) | local store: ok on CPU · S3: blocked until IAM grants `s3:PutObject` |
+| store_push (operator) | local store: ok on CPU · S3: implemented, not enabled in this deployment (organisers' decision: file-system store) |
 
 Packaging: `pip install gotrain` (1.0.0 from PyPI) was checked in a fresh virtualenv on 1 Nov (CPU torch, Python
-3.12): `gotrain --version`, `gotrain-mcp --version` / `--check` (installed layout, 27 tools), and the one-line `gotrain
-train` preflight errors. Before that, `pip install "git+https://github.com/yaranoun/GoTrain.git@s2"` was checked the
-same way: `gotrain-mcp --version` / `--check` (installed layout, 27 tools), then an MCP stdio client
-listed the tools and called `list_tasks` and `query_runs` on a fresh clone's `workspace/`, and got a refusal with
-`isError`. The launcher's gates: `tests/test_mcp_cli.py`.
+3.12): `gotrain --version`, `gotrain-mcp --version` / `--check` (installed layout, 27 tools), and the one-line
+`gotrain train` preflight errors. Before the PyPI upload, a git install from GitHub was checked the same way:
+`gotrain-mcp --version` / `--check` (installed layout, 27 tools), then an MCP stdio client listed the tools and
+called `list_tasks` and `query_runs` on a fresh clone's `workspace/`, and got a refusal with `isError`. The
+launcher's gates: `tests/test_mcp_cli.py`.

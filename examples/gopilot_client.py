@@ -82,7 +82,7 @@ def _hint(err: str) -> str:
     if "data cache" in err:
         return "the task's train/val cache is not on this machine: build_cache (a GPU job) or set GOTRAIN_CACHE"
     if any(f in err for f in ("checkpoint.pt", "config.json", "composite.json")):
-        return "the model files are not in this workspace (not in git): store_pull, or a workspace that has them"
+        return "the model files are not in this workspace (checkpoints are not in git): use the training machine's workspace"
     if "no production model" in err:
         return "nothing registered or finalized for this task yet: pass model '<task>:vN' or a finished run id"
     return ""
