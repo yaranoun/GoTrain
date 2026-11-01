@@ -42,6 +42,7 @@ MODEL_ID = re.compile(r"^(?P<task>[\w.-]+):v(?P<version>\d+)$")
 # On-disk channel order of the tasks whose stored order differs from the cache's (tasks.CHANNELS selects from these).
 DISK_ORDER = {"m-eurosat": tasks.EUROSAT_DISK_ORDER, "m-brick-kiln": tasks.BRICK_KILN_DISK_ORDER,
               "m-cashew-plant": tasks.CASHEW_DISK_ORDER, "m-SA-crop-type": tasks.SA_CROP_DISK_ORDER}
+CHANNEL_ORDERS = ("auto", "cache", "disk")
 FORMS = '"val:<i>", a .npy / .png / .jpg path, "b64npy:<base64 .npy>" or "b64png:<base64 png>"'
 MAX_BYTES = 256 << 20
 MAX_PIXELS = 1024 * 1024
@@ -181,24 +182,34 @@ def _rgb(task: str, blob: bytes) -> np.ndarray:
         raise ValueError(f"not a PNG/JPEG image: {e}") from None
 
 
-def _to_cache(task: str, arr) -> np.ndarray:
+def _to_cache(task: str, arr, channels: str = "auto") -> np.ndarray:
     """Raw sensor values (selected bands in cache order, or all on-disk channels; (C,H,W) or (H,W,C)) -> the cache's
-    float32 (C,H,W): on-disk channels selected by tasks.CHANNELS, tasks.VALUE_SCALE applied (rounded). A channel count
-    equal to both (m-eurosat: 13) is read in cache order (canonical Sentinel-2, B8A after B08)."""
+    float32 (C,H,W): on-disk channels selected by tasks.CHANNELS, tasks.VALUE_SCALE applied (rounded). channels:
+    "cache" (the task's bands in cache order), "disk" (all channels in GEO-Bench's on-disk order) or "auto" (by count;
+    refused when both orders have the same count but differ, e.g. m-eurosat's 13: say which)."""
+    if channels not in CHANNEL_ORDERS:
+        raise ValueError(f"channels must be one of {CHANNEL_ORDERS}, not {channels!r}")
     arr = np.asarray(arr)
     if arr.dtype.kind not in "biuf" or arr.ndim != 3:
         raise ValueError(f"expected a numeric (C,H,W) or (H,W,C) image, got {arr.dtype} {arr.shape}")
     names, n_disk, perm = _layout(task)
-    counts = (len(names), n_disk)
+    counts = {"auto": (len(names), n_disk), "cache": (len(names),), "disk": (n_disk,)}[channels]
     if arr.shape[0] not in counts and arr.shape[-1] in counts:
         arr = arr.transpose(2, 0, 1)
-    if arr.shape[0] == len(names):
+    c = arr.shape[0]
+    if channels == "auto" and c == len(names) == n_disk and perm != list(range(n_disk)):
+        disk = DISK_ORDER.get(task, names)
+        raise ValueError(f"{task}: {c} channels can be the cache order {names} or GEO-Bench's on-disk order {disk}; "
+                         f"pass channels='cache' or channels='disk'")
+    if c == len(names) and channels in ("auto", "cache"):
         pass
-    elif arr.shape[0] == n_disk:
+    elif c == n_disk and channels in ("auto", "disk"):
         arr = arr[perm]
     else:
-        disk = f" or its {n_disk} on-disk channels" if n_disk != len(names) else ""
-        raise ValueError(f"{task} takes {len(names)} bands {names}{disk}, as (C,H,W) or (H,W,C); got {arr.shape}")
+        want = {"cache": f"{len(names)} bands {names}", "disk": f"{n_disk} on-disk channels",
+                "auto": f"{len(names)} bands {names}" + (f" or its {n_disk} on-disk channels"
+                                                         if n_disk != len(names) else "")}[channels]
+        raise ValueError(f"{task} takes {want}, as (C,H,W) or (H,W,C); got {arr.shape}")
     h, w = arr.shape[1:]
     if min(h, w) < MIN_SIDE or h * w > MAX_PIXELS:
         raise ValueError(f"image of {h}x{w} pixels; each side >= {MIN_SIDE} and at most {MAX_PIXELS} pixels")
@@ -216,9 +227,9 @@ def _val_split(task: str) -> dict:
                            f"it): build it first with build_cache {task}. {e}") from None
 
 
-def _load(task: str, image, val: dict | None) -> np.ndarray:
+def _load(task: str, image, val: dict | None, input_root=None, channels: str = "auto") -> np.ndarray:
     if isinstance(image, np.ndarray):
-        return _to_cache(task, image)
+        return _to_cache(task, image, channels)
     if not isinstance(image, (str, Path)):
         raise ValueError(f"image must be {FORMS}")
     s = str(image).strip()
@@ -235,29 +246,42 @@ def _load(task: str, image, val: dict | None) -> np.ndarray:
             raise ValueError(f"{task} val has {len(x)} images; index {i} is out of range")
         return np.ascontiguousarray(x[i], dtype=np.float32)  # the cache: already in cache order and scale
     if head == "b64npy":
-        return _to_cache(task, _npy(_b64(s[7:])))
+        return _to_cache(task, _npy(_b64(s[7:])), channels)
     if head == "b64png":
-        return _to_cache(task, _rgb(task, _b64(s[7:])))
-    path = Path(s).expanduser()
+        return _to_cache(task, _rgb(task, _b64(s[7:])), channels)
+    if input_root is not None:  # the MCP server: only files under its input folder, checked before any file access
+        root = Path(input_root).expanduser().resolve()
+        refused = ValueError(f"image files must be inside {root} (copy the file there), or pass "
+                             f"'val:<i>', 'b64npy:<...>' or 'b64png:<...>'")
+        path = Path(s)  # no '~' expansion: the same answer whatever exists on the host
+        try:
+            path = (path if path.is_absolute() else root / path).resolve()
+        except (OSError, RuntimeError, ValueError):
+            raise refused from None
+        if root not in path.parents:
+            raise refused
+    else:
+        path = Path(s).expanduser()
     if not path.is_file():
         raise ValueError(f"no such file {path}; image must be {FORMS}")
     if path.stat().st_size > MAX_BYTES:
         raise ValueError(f"{path} is larger than {MAX_BYTES >> 20} MB")
     suffix = path.suffix.lower()
     if suffix == ".npy":
-        return _to_cache(task, _npy(path.read_bytes()))
+        return _to_cache(task, _npy(path.read_bytes()), channels)
     if suffix in (".png", ".jpg", ".jpeg"):
-        return _to_cache(task, _rgb(task, path.read_bytes()))
+        return _to_cache(task, _rgb(task, path.read_bytes()), channels)
     raise ValueError(f"unsupported file type {suffix!r}; image must be {FORMS}")
 
 
-def load_input(task: str, image) -> np.ndarray:
+def load_input(task: str, image, channels: str = "auto") -> np.ndarray:
     """One image -> float32 (C,H,W) in cache channel order and value scale. Forms: "val:<i>" (the val cache, never
     test), a .npy path ((C,H,W) or (H,W,C)), a .png/.jpg path (RGB tasks), "b64npy:<base64 .npy bytes>",
     "b64png:<base64>". Non-cache inputs are raw sensor values: the task's selected bands or all its on-disk
-    channels (tasks.CHANNELS applied), with tasks.VALUE_SCALE applied (rounded)."""
+    channels (tasks.CHANNELS applied), with tasks.VALUE_SCALE applied (rounded); channels: "auto", "cache" or "disk"
+    (see _to_cache)."""
     _check_task(task)
-    return _load(task, image, None)
+    return _load(task, image, None, channels=channels)
 
 
 # --------------------------------------------------------------------------- the models
@@ -368,19 +392,20 @@ def overlay_png(task: str, x: np.ndarray, mask: np.ndarray, classes: list[str], 
 
 
 def predict(image, task: str | None = None, model: str = "", device: str = "cpu", tta: bool | None = None,
-            out_dir=None) -> dict:
+            out_dir=None, input_root=None, channels: str = "auto") -> dict:
     """Predict one image (see load_input) with a model (see resolve_model). tta: None = recorded flags; True/False
     overrides a single model (a composite always uses its members' flags). device "cuda" only under the GPU lock.
     Classification: {task, model_id, run_id, kind, tta, probs: {class: p} sorted desc, top: [[class, p]] x5}.
     Segmentation: {task, model_id, run_id, kind, tta, shape, class_fractions, mask_path (.npy in out_dir),
-    overlay_png: PNG bytes}."""
+    overlay_png: PNG bytes}. input_root: file paths must lie inside it (relative paths are taken from it).
+    channels: the channel order of a raw input ("auto", "cache" or "disk"; see _to_cache)."""
     if device not in ("cpu", "cuda"):
         raise ValueError(f"device must be 'cpu' or 'cuda', not {device!r}")
     spec = resolve_model(task, model)
     task = spec["task"]
     val = _val_split(task)
     n_classes, classes = int(val["n_classes"]), [str(c) for c in val["classes"]]
-    x = _load(task, image, val)
+    x = _load(task, image, val, input_root, channels)
     if device == "cpu":
         out, flags = _infer(spec, x, n_classes, torch.device("cpu"), tta)
     else:
@@ -426,9 +451,11 @@ def main(argv=None) -> int:
     ap.add_argument("--tta", choices=("on", "off"))
     ap.add_argument("--device", default="cpu")
     ap.add_argument("--out-dir")
+    ap.add_argument("--channels", choices=CHANNEL_ORDERS, default="auto",
+                    help="channel order of a raw input: cache (the task's bands) or disk (GEO-Bench on-disk order)")
     args = ap.parse_args(argv)
     res = predict(args.image, args.task, args.model, args.device, None if args.tta is None else args.tta == "on",
-                  args.out_dir)
+                  args.out_dir, channels=args.channels)
     if "overlay_png" in res:
         res["overlay_png"] = f"<{len(res['overlay_png'])} bytes of PNG, not written>"
     print(json.dumps(res, indent=1, default=str))

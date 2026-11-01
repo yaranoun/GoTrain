@@ -228,6 +228,78 @@ def test_verify_matches_the_cli(ws, unchanged):
     assert _ok(ws, "verify")["exit_code"] == 2
 
 
+def test_out_dir_inside_the_results_workspace_is_refused_unless_a_sandbox(tmp_path, monkeypatch):
+    """_out in-process with mcp_ops.WORKSPACE / is_sandbox patched (in tests the workspace is always a sandbox; the
+    real workspace is never involved): inside a non-sandbox workspace an out_dir is refused (symlinks resolved),
+    inside a sandbox it is allowed; the workspace itself, its parents and the repository root never are."""
+    from gotrain import mcp_ops
+
+    ws = (tmp_path / "results").resolve()
+    (ws / "runs").mkdir(parents=True)
+    (tmp_path / "into-ws").symlink_to(ws / "views", target_is_directory=True)
+    monkeypatch.setattr(mcp_ops, "WORKSPACE", ws)
+    monkeypatch.setattr(mcp_ops, "is_sandbox", lambda: False)
+    for bad in (ws / "views", ws / "runs" / "trees", tmp_path / "elsewhere" / ".." / "results" / "report",
+                tmp_path / "into-ws"):
+        with pytest.raises(ValueError, match="inside the results workspace"):
+            mcp_ops._out(str(bad))
+    for bad in (ws, tmp_path, REPO, ws / "runs" / ".."):
+        with pytest.raises(ValueError, match="the workspace, a parent of it, or the repository root"):
+            mcp_ops._out(str(bad))
+    assert sorted(p.name for p in ws.iterdir()) == ["runs"] and not any((ws / "runs").iterdir())
+    assert mcp_ops._out(str(tmp_path / "views")) == (tmp_path / "views").resolve() and (tmp_path / "views").is_dir()
+
+    monkeypatch.setattr(mcp_ops, "is_sandbox", lambda: True)  # a sandbox: views may live inside it
+    assert mcp_ops._out(str(ws / "views" / "trees")) == ws / "views" / "trees" and (ws / "views" / "trees").is_dir()
+    for bad in (ws, tmp_path, REPO):
+        with pytest.raises(ValueError, match="refused"):
+            mcp_ops._out(str(bad))
+
+
+@pytest.mark.parametrize("sid, plain", [
+    ("m-eurosat__main__20261101T000000Z", True), ("m-eurosat__main__chain", True), ("a.b-c_d", True),
+    ("x" * 160, True), ("../../escape/evil", False), ("a/b", False), ("a..b", False), (".hidden", False),
+    ("-x", False), ("x" * 161, False), ("", False), ("a b", False), ("é", False), ("/abs", False),
+    ("m-eurosat__dev__20261101T000000Z\n", False)])
+def test_sid_file_is_the_id_only_for_a_plain_name(sid, plain):
+    name = report._sid_file(sid)
+    assert name == (sid if plain else f"session-{hashlib.sha256(sid.encode()).hexdigest()[:16]}")
+    assert "/" not in name and ".." not in name and name == report._sid_file(sid)
+
+
+def _tree_row(sid: str, run_id: str) -> dict:
+    return {"run_id": run_id, "task": "m-eurosat", "task_type": "classification", "stage": "train", "status": "done",
+            "outcome": "kept", "session_id": sid, "created_at": "2026-11-01T00:00:00Z", "parent_run_id": None,
+            "config": {"backbone": "resnet18", "weights": "imagenet", "lr": 0.001},
+            "metrics": {"primary": "accuracy", "val": {"accuracy": 0.9}}}
+
+
+def test_tree_figure_names_files_by_a_hash_for_a_non_plain_session_id(tmp_path, monkeypatch):
+    """A '../' session id (a synthetic ledger row in a temp workspace) never becomes a path: the png / txt land in
+    out_dir as session-<hash>; a plain id keeps <sid>.png. show_tree (CLI, a sandbox) reads the hashed files back."""
+    evil, plain = "../../escape/evil", "m-eurosat__dev__20261101T000000Z"
+    w, out = tmp_path / "ws", tmp_path / "out" / "trees"
+    monkeypatch.setattr(ledger, "LEDGER", w / "ledger.jsonl")
+    for sid, run_id in ((evil, "m-eurosat-0001"), (plain, "m-eurosat-0002")):
+        ledger.append(ledger.LEDGER, _tree_row(sid, run_id))
+        ledger.append(w / "sessions.jsonl", {"type": "session_start", "session_id": sid, "task": "m-eurosat",
+                                             "arm": "dev", "phases": ["level1"], "time": "2026-11-01T00:00:00Z"})
+    h = f"session-{hashlib.sha256(evil.encode()).hexdigest()[:16]}"
+    png = report.tree_figure(evil, out)
+    assert png == out / f"{h}.png" and png.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
+    assert "m-eurosat-0001 [train, kept]" in (out / f"{h}.txt").read_text()
+    assert report.tree_figure(plain, out) == out / f"{plain}.png" and (out / f"{plain}.txt").exists()
+    assert sorted(p.name for p in out.iterdir()) == sorted([f"{h}.png", f"{h}.txt", f"{plain}.png", f"{plain}.txt"])
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["out", "ws"]  # no <tmp>/escape/evil.png
+
+    views = w / "views" / "trees"  # inside the workspace: allowed, it is a sandbox
+    tree = _ok(w, "show_tree", session_id=evil, out_dir=str(views))
+    assert Path(tree["png_path"]) == (views / f"{h}.png").resolve() and "m-eurosat-0001 [train, kept]" in tree["text"]
+    assert "m-eurosat-0002" not in tree["text"]
+    assert sorted(p.name for p in views.iterdir()) == [f"{h}.png", f"{h}.txt"]
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["out", "ws"]
+
+
 def test_cli_errors_and_guards(ws, unchanged):
     assert _ops(ws, "bogus")[0] == 2 and "unknown op" in _ops(ws, "bogus")[1]["error"]
     assert _ops(ws, "list_tasks", raw="{not json")[0] == 2

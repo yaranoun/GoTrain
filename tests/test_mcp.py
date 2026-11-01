@@ -5,12 +5,16 @@ with a temp job workspace, a temp dataset folder (GEO_BENCH_DIR) and a temp loca
 Default mode: the exact tool set (no operator tool); every read tool on the results workspace and some on the empty
 sandbox; the text cap; jobs that fail cleanly (a bogus task is refused before any job, store_pull from an empty store
 ends failed) followed with list_jobs / get_job / wait_job / job_log / cancel_job; refusals (arm main / off, predict
-without a model). Operator mode (main workspace = a temp copy of the fixture, a sandbox): exactly five more tools;
-registry tags and store pushes touch only that copy and the temp store; finalize ends failed with PermissionError
-(sandbox), never a real finalize. predict on bare networks with a synthetic cache in a temp GOTRAIN_CACHE
-(in-process and in a child process; a segmentation overlay image). Stray stdout never corrupts the stdio protocol; the
-streamable HTTP transport answers initialize / list_tools. The results workspace never changes, and the server source
-never reaches the test evaluation directly."""
+without a model). Session ids and budgets are checked before any job (jobs.start stubbed in a wrapper server: nothing
+starts). Operator mode (main workspace = a temp copy of the fixture, a sandbox): exactly five more tools; registry
+tags and store pushes touch only that copy and the temp store; finalize is refused before any job until the session
+completed level1, reflect and level2, then ends failed with PermissionError (sandbox), never a real finalize. The server
+refuses to start on a sandbox that overlaps the results, main or default workspace. predict on bare networks with a
+synthetic cache in a temp GOTRAIN_CACHE (in-process on the results workspace and in a child process on the sandbox, its
+own copy of the runs; a segmentation overlay image); image files only inside the input folder (same answer for an
+existing and a missing file outside it). Stray stdout never corrupts the stdio protocol; the streamable HTTP transport
+answers initialize / list_tools. The results workspace never changes, and the server source never reaches the test
+evaluation directly."""
 
 import asyncio
 import base64
@@ -62,7 +66,8 @@ def ws(tmp_path_factory):
 @pytest.fixture
 def env(ws, tmp_path):
     """The server's environment: results = the fixture; job workspace, datasets, store and main workspace in tmp."""
-    e = {k: v for k, v in os.environ.items() if k not in ("GOTRAIN_MCP_OPERATOR", "GOTRAIN_MCP_TEXT_CAP")}
+    e = {k: v for k, v in os.environ.items() if k not in ("GOTRAIN_MCP_OPERATOR", "GOTRAIN_MCP_TEXT_CAP",
+                                                          "GOTRAIN_MCP_INPUT_DIR")}
     e.update(GOTRAIN_WORKSPACE=str(ws), GOTRAIN_MCP_WORKSPACE=str(tmp_path / "mcp" / "workspace"),
              GOTRAIN_MCP_MAIN_WORKSPACE=str(tmp_path / "not-main"), GEO_BENCH_DIR=str(tmp_path / "geobench"),
              GOTRAIN_STORE="local", GOTRAIN_STORE_ROOT=str(tmp_path / "store"))
@@ -76,13 +81,12 @@ def unchanged(ws):
     assert _fingerprint(ws) == before, "the MCP server wrote into the results workspace"
 
 
-def _serve(env: dict, script):
-    """Start the server over stdio with env, run `await script(session)`, return its result."""
+def _serve(env: dict, script, args=("-m", "gotrain.mcp_server")):
+    """Start the server (python <args>) over stdio with env, run `await script(session)`, return its result."""
     from mcp import ClientSession, StdioServerParameters, stdio_client
 
     async def go():
-        params = StdioServerParameters(command=sys.executable, args=["-m", "gotrain.mcp_server"], cwd=str(REPO),
-                                       env=env)
+        params = StdioServerParameters(command=sys.executable, args=list(args), cwd=str(REPO), env=env)
         async with stdio_client(params) as (r, w):
             async with ClientSession(r, w) as s:
                 await s.initialize()
@@ -93,8 +97,8 @@ def _serve(env: dict, script):
 
 async def _call(s, name: str, **args) -> tuple[str, list[bytes]]:
     res = await s.call_tool(name, args)
-    assert not res.isError, (name, res.content)  # tools answer "error: ..." as text, never a protocol error
     text = "\n".join(c.text for c in res.content if c.type == "text")
+    assert res.isError == text.startswith("error: "), (name, res.content)  # a refusal: isError + "error: <type>: ..."
     return text, [base64.b64decode(c.data) for c in res.content if c.type == "image"]
 
 
@@ -261,6 +265,18 @@ def test_operator_mode_adds_five_tools_and_finalize_refuses_in_a_sandbox(ws, env
         done = json.loads(await _text(s, "wait_job", job_id=push["job_id"], timeout_s=180))
         assert done["status"] == "done", done["log_tail"]
 
+        # the operator's finalize keeps gotrain.run's phase rules, checked before any job: the fixture's session
+        # completed only level1
+        for sid, task, want in ((EU, "m-eurosat", f"session {EU} has not completed reflect, level2"),
+                                (EU, "m-brick-kiln", f"session {EU} is a m-eurosat session, not m-brick-kiln"),
+                                ("m-eurosat__main__20991231T000000Z", "m-eurosat", "unknown session"),
+                                ("../../workspace/x", "m-eurosat", "invalid session_id")):
+            err = await _text(s, "finalize", task=task, session_id=sid, rationale="test: refused before any job")
+            assert err.startswith(f"error: JobError: {want}"), err
+        assert json.loads(await _text(s, "list_jobs", kind="finalize")) == []
+        for phase in ("reflect", "level2"):  # the copy's session completes its phases: the job starts
+            ledger.append(main / "sessions.jsonl", {"type": "phase_done", "session_id": EU, "phase": phase,
+                                                    "time": "2026-11-01T01:00:00Z"})
         fin = json.loads(await _text(s, "finalize", task="m-eurosat", session_id=EU,
                                      rationale="test: must be refused in a sandbox workspace"))
         assert fin["kind"] == "finalize" and fin["workspace"] == str(main) and fin["gpu"]
@@ -283,6 +299,110 @@ def test_operator_mode_adds_five_tools_and_finalize_refuses_in_a_sandbox(ws, env
     assert (tmp_path / "store" / "registry" / "registry.jsonl").exists()
 
 
+def test_server_refuses_to_start_on_a_sandbox_overlapping_another_workspace(env, tmp_path):
+    """At import the sandbox must be neither the results, main or default workspace, nor inside one, nor a parent of
+    one (symlinks resolved); a separate layout imports fine. A refusal creates nothing."""
+    res, main = tmp_path / "results", tmp_path / "main"
+    res.mkdir()
+    (tmp_path / "to-results").symlink_to(res, target_is_directory=True)
+    layouts = [  # (results, main, sandbox, the workspace it overlaps or None)
+        (res, main, res, "results"), (res, main, res / "mcp" / "workspace", "results"),
+        (tmp_path / "a" / "results", main, tmp_path / "a", "results"), (res, main, tmp_path / "to-results", "results"),
+        (res, main, main, "main"), (res, main, main / "mcp" / "workspace", "main"),
+        (res, tmp_path / "b" / "main", tmp_path / "b", "main"), (res, main, REPO, "default"),
+        (res, main, tmp_path / "sandbox", "results"),  # next to results: both would write <tmp>/logs
+        (res, main, tmp_path / "mcp" / "workspace", None)]
+    procs = []
+    for results, main_ws, sandbox, _ in layouts:
+        e = {**env, "GOTRAIN_WORKSPACE": str(results), "GOTRAIN_MCP_MAIN_WORKSPACE": str(main_ws),
+             "GOTRAIN_MCP_WORKSPACE": str(sandbox)}
+        procs.append(subprocess.Popen([sys.executable, "-c", "import gotrain.mcp_server"], cwd=REPO, env=e,
+                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True))
+    for (_, _, sandbox, overlaps), p in zip(layouts, procs):
+        _, err = p.communicate(timeout=300)
+        if overlaps is None:
+            assert p.returncode == 0, err[-3000:]
+            continue
+        how = "sits next to" if sandbox.name == "sandbox" else "overlaps"
+        want = f"RuntimeError: the MCP sandbox workspace {sandbox.resolve()} {how} the {overlaps} workspace"
+        assert p.returncode != 0 and want in err, (sandbox, overlaps, err[-3000:])
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["results", "to-results"] and not any(res.iterdir())
+
+
+_NO_JOBS_SERVER = (  # the real server with jobs.start stubbed: a request that passes every guard ends here
+    "import json\n"
+    "from gotrain import mcp_server as m\n\n\n"
+    "def start(kind, argv, **kw):\n"
+    "    raise RuntimeError('stub jobs.start ' + json.dumps({'kind': kind, 'argv': argv[1:], 'gpu': kw.get('gpu'),\n"
+    "                                                        'workspace': str(kw.get('workspace'))}))\n\n\n"
+    "m.jobs.start = start\n"
+    "m.main([])\n")
+
+
+def _stubbed(text: str) -> dict:
+    assert text.startswith("error: RuntimeError: stub jobs.start "), text
+    return json.loads(text.split("stub jobs.start ", 1)[1])
+
+
+def test_session_ids_and_budgets_are_checked_before_any_job(env, tmp_path):
+    """start_session / launch_run: a session id is a plain name, either a sandbox session of the same task and arm
+    or a new <task>__<arm>__<YYYYmmddTHHMMSSZ> (operator mode: any plain name); a budget is finite in (0, 60] (600 in
+    operator mode). jobs.start is a stub here, so nothing can start (never gotrain.run, not even a dry run)."""
+    jobws = Path(env["GOTRAIN_MCP_WORKSPACE"])
+    known, bk = "m-eurosat__dev__20261101T000000Z", "m-brick-kiln__dev__20261101T000000Z"
+    for sid, task in ((known, "m-eurosat"), (bk, "m-brick-kiln")):
+        ledger.append(jobws / "sessions.jsonl", {"type": "session_start", "session_id": sid, "task": task,
+                                                 "arm": "dev", "phases": ["level1"], "B": 10.0, "dry_run": False})
+        ledger.append(jobws / "sessions.jsonl", {"type": "phase_done", "session_id": sid, "phase": "level1"})
+    server = tmp_path / "no_jobs_server.py"
+    server.write_text(_NO_JOBS_SERVER)
+    env = {**env, "PYTHONPATH": str(REPO)}
+    bad_budgets = ("nan", "NaN", "inf", "-inf", 0, -1, 60.5, 1e9)
+
+    async def default(s):
+        for sid in ("../../../escape/m-eurosat__dev__20261101T000000Z", "../../workspace/agent_logs/x", "a/b",
+                    "a..b", ".hidden", "-x", "x" * 161, " "):
+            err = await _text(s, "start_session", task="m-eurosat", budget=1, session_id=sid, dry_run=True)
+            assert err.startswith("error: JobError: invalid session_id"), (sid, err)
+        err = await _text(s, "start_session", task="m-eurosat", budget=1, session_id="m-eurosat__main__chain",
+                          dry_run=True)
+        assert err.startswith("error: JobError: unknown session m-eurosat__main__chain") and \
+            "a new id must be m-eurosat__dev__<YYYYmmddTHHMMSSZ>" in err, err
+        err = await _text(s, "start_session", task="m-eurosat", phases="level2", session_id=bk)
+        assert err.startswith(f"error: JobError: session {bk} is a m-brick-kiln / arm dev session"), err
+        got = _stubbed(await _text(s, "start_session", task="m-eurosat", phases="level2", session_id=known))
+        assert got["kind"] == "session" and f"--session-id={known}" in got["argv"] and got["gpu"]
+        new = "m-eurosat__dev__20261101T120000Z"
+        got = _stubbed(await _text(s, "start_session", task="m-eurosat", budget=60, session_id=new))
+        assert got["argv"][got["argv"].index("--budget") + 1] == "60.0" and f"--session-id={new}" in got["argv"]
+        assert got["workspace"] == str(jobws.resolve())
+        for b in bad_budgets:
+            for name, args in (("start_session", {}), ("launch_run", {"config": {}, "hypothesis": "h"})):
+                err = await _text(s, name, task="m-eurosat", budget=b, **args)
+                assert err.startswith("error: JobError: budget must be a finite number of GPU minutes in (0, 60]"), \
+                    (name, b, err)
+        got = _stubbed(await _text(s, "launch_run", task="m-eurosat", config={}, hypothesis="h", budget=60))
+        assert got["kind"] == "train" and "--budget=60.0" in got["argv"] and got["gpu"]
+
+    async def operator(s):
+        main_ws = Path(env["GOTRAIN_MCP_MAIN_WORKSPACE"]).resolve()
+        got = _stubbed(await _text(s, "start_session", task="m-eurosat", budget=600, arm="main",
+                                   session_id="m-eurosat__main__chain"))
+        assert "--session-id=m-eurosat__main__chain" in got["argv"] and got["workspace"] == str(main_ws)
+        for sid in ("../m-eurosat__main__chain", "a..b"):
+            err = await _text(s, "start_session", task="m-eurosat", budget=1, arm="main", session_id=sid)
+            assert err.startswith("error: JobError: invalid session_id"), (sid, err)
+        for b in ("nan", 600.5):
+            err = await _text(s, "launch_run", task="m-eurosat", config={}, hypothesis="h", budget=b)
+            assert err.startswith("error: JobError: budget must be a finite number of GPU minutes in (0, 600]"), err
+        assert "--budget=600.0" in _stubbed(await _text(s, "launch_run", task="m-eurosat", config={}, hypothesis="h",
+                                                        budget=600))["argv"]
+
+    _serve(env, default, args=(str(server),))
+    _serve({**env, "GOTRAIN_MCP_OPERATOR": "1"}, operator, args=(str(server),))
+    assert not (jobws / "jobs").exists() and not (tmp_path / "escape").exists()
+
+
 def _synthetic_cache(root: Path, task: str, x: np.ndarray, y: np.ndarray) -> None:
     """A v2 cache in a temp GOTRAIN_CACHE (train meta for the stats, val arrays): never the real cache."""
     from gotrain.engine import data, tasks
@@ -301,9 +421,9 @@ def _synthetic_cache(root: Path, task: str, x: np.ndarray, y: np.ndarray) -> Non
         (d / f"{split}.meta.json").write_text(json.dumps(meta))
 
 
-def test_predict_classification_and_segmentation_in_both_workspaces(env, tmp_path):
-    """Bare (random) networks saved as finished runs; the server predicts in-process (results, CPU) and in a child
-    process (sandbox); segmentation answers a mask path and an overlay image."""
+@pytest.fixture(scope="module")
+def pred(tmp_path_factory):
+    """A results workspace with bare (random) networks saved as finished runs, and a synthetic cache for them."""
     import segmentation_models_pytorch as smp
     import timm
     import torch
@@ -311,7 +431,8 @@ def test_predict_classification_and_segmentation_in_both_workspaces(env, tmp_pat
     from gotrain.engine import tasks
     from gotrain.store import sha256_file
 
-    w, cache = tmp_path / "pred_ws", tmp_path / "cache"
+    root = tmp_path_factory.mktemp("pred")
+    w, cache = root / "pred_ws", root / "cache"
     rng = np.random.default_rng(0)
     _synthetic_cache(cache, "m-eurosat", rng.integers(0, 4000, (2, 13, 32, 32)).astype(np.uint16), np.arange(2))
     _synthetic_cache(cache, "m-cashew-plant", rng.integers(0, 4000, (2, 12, 64, 64)).astype(np.uint16),
@@ -330,25 +451,105 @@ def test_predict_classification_and_segmentation_in_both_workspaces(env, tmp_pat
             "run_id": run_id, "task": task, "task_type": tasks.info(task)["type"], "stage": "train",
             "status": "done", "session_id": "mcp-predict", "config": cfg, "created_at": "2026-11-01T05:00:00Z",
             "artifacts": {"dir": str(d.relative_to(w)), "checkpoint_sha256": sha256_file(d / "checkpoint.pt")}})
-    env = {**env, "GOTRAIN_WORKSPACE": str(w), "GOTRAIN_MCP_WORKSPACE": str(w), "GOTRAIN_CACHE": str(cache)}
+    return w, cache
+
+
+def _pred_env(env: dict, pred, sandbox: Path) -> dict:
+    """Results = the pred workspace; the sandbox is a separate folder holding its own copy of the runs, plus a
+    sandbox-only run mcp-eu-sb (mcp-eu-1's files under another id)."""
+    w, cache = pred
+    shutil.copytree(w, sandbox)
+    rec = next(r for r in ledger.read(sandbox / "ledger.jsonl") if r["run_id"] == "mcp-eu-1")
+    ledger.append(sandbox / "ledger.jsonl", {**rec, "run_id": "mcp-eu-sb"})
+    return {**env, "GOTRAIN_WORKSPACE": str(w), "GOTRAIN_MCP_WORKSPACE": str(sandbox), "GOTRAIN_CACHE": str(cache)}
+
+
+def _same_probs(a: dict, b: dict) -> bool:
+    return a.keys() == b.keys() and all(a[c] == pytest.approx(p, abs=1e-5) for c, p in b.items())
+
+
+def test_predict_classification_and_segmentation_in_both_workspaces(env, pred, tmp_path):
+    """The server predicts in-process (results, CPU) and in a child process (sandbox: its own runs); segmentation
+    answers a mask path in <sandbox>/predictions and an overlay image. The results workspace never changes."""
+    w, sb = pred[0], tmp_path / "sandbox" / "workspace"
+    env = _pred_env(env, pred, sb)
+    before = _fingerprint(w)
 
     async def script(s):
         local = json.loads(await _text(s, "predict", image="val:0", model="mcp-eu-1"))
-        child = json.loads(await _text(s, "predict", image="val:0", model="mcp-eu-1", workspace="sandbox"))
+        child = json.loads(await _text(s, "predict", image="val:0", model="mcp-eu-sb", workspace="sandbox"))
         assert local["kind"] == "checkpoint" and len(local["probs"]) == 10
         assert [c for c, _ in local["top"]] == list(local["probs"])[:5]  # probs sorted, top 5
         assert sum(local["probs"].values()) == pytest.approx(1, abs=1e-4)
-        assert all(child["probs"][c] == pytest.approx(p, abs=1e-5) for c, p in local["probs"].items())
+        assert child["run_id"] == "mcp-eu-sb" and _same_probs(child["probs"], local["probs"])
+        err = await _text(s, "predict", image="val:0", model="mcp-eu-sb")  # the sandbox's run: not in the results
+        assert err.startswith("error: ValueError: unknown model 'mcp-eu-sb'"), err
         text, imgs = await _call(s, "predict", image="val:1", model="mcp-ca-1", workspace="sandbox")
         seg = json.loads(text)
         assert seg["shape"] == [64, 64] and "no data" not in seg["class_fractions"]
         assert sum(seg["class_fractions"].values()) == pytest.approx(1, abs=1e-4)
         assert np.load(seg["mask_path"]).shape == (64, 64) and Path(seg["overlay_png_path"]).exists()
-        assert Path(seg["mask_path"]).parent == w / "predictions" and imgs and imgs[0].startswith(PNG)
+        assert Path(seg["mask_path"]).parent == sb / "predictions" and imgs and imgs[0].startswith(PNG)
+        text, _ = await _call(s, "predict", image="val:0", model="mcp-ca-1")  # in-process: also into the sandbox
+        assert Path(json.loads(text)["mask_path"]).parent == sb / "predictions"
         err = await _text(s, "predict", image="test:0", model="mcp-eu-1")
         assert err.startswith("error: ValueError: only 'val:<i>' reads a split"), err
 
     _serve(env, script)
+    assert _fingerprint(w) == before, "a prediction wrote into the results workspace"
+
+
+def test_predict_reads_image_files_only_inside_the_input_folder(env, pred, tmp_path):
+    """File inputs resolve inside INPUT_DIR (default <sandbox>/inputs; relative paths from it), in-process and in the
+    child alike. Outside it (absolute, '../', '~', a symlink out, the folder itself) every answer is the same, for an
+    existing and a missing file: no existence oracle. GOTRAIN_MCP_INPUT_DIR moves the folder."""
+    w, cache = pred
+    sb = tmp_path / "sandbox" / "workspace"
+    env = _pred_env(env, pred, sb)
+    before = _fingerprint(w)
+    inputs, outside, custom = sb / "inputs", tmp_path / "outside", tmp_path / "custom"
+    x = np.load(cache / "m-eurosat" / "v2" / "val.x.npy")[0]  # the val:0 image as raw sensor values
+    for d in (inputs / "sub", outside, custom):
+        d.mkdir(parents=True)
+    for p in (inputs / "eu.npy", inputs / "sub" / "eu.npy", outside / "eu.npy", custom / "eu.npy"):
+        np.save(p, x)
+    (outside / "notes.txt").write_text("not an image\n")
+    (inputs / "link.npy").symlink_to(outside / "eu.npy")
+    (inputs / "linkdir").symlink_to(outside, target_is_directory=True)
+    (inputs / "dangling.npy").symlink_to(outside / "missing.npy")
+    (inputs / "alias.npy").symlink_to(inputs / "sub" / "eu.npy")  # a link that stays inside is fine
+    refused = f"error: ValueError: image files must be inside {inputs.resolve()} "
+
+    async def script(s):
+        ref = json.loads(await _text(s, "predict", image="val:0", model="mcp-eu-1"))["probs"]
+        for image, ws_ in ((str(inputs / "eu.npy"), "results"), ("eu.npy", "results"), ("sub/eu.npy", "results"),
+                           ("./sub/../alias.npy", "results"), ("sub/eu.npy", "sandbox")):
+            got = json.loads(await _text(s, "predict", image=image, model="mcp-eu-1", workspace=ws_, channels="cache"))
+            assert _same_probs(got["probs"], ref), (image, ws_)
+        answers = {}
+        for image in (str(outside / "eu.npy"), str(outside / "missing.npy"), str(outside / "notes.txt"),
+                      "../../../outside/eu.npy", "../../../outside/missing.npy", "link.npy", "linkdir/eu.npy",
+                      "dangling.npy", "/etc/hostname", str(inputs), "."):
+            answers[image] = await _text(s, "predict", image=image, model="mcp-eu-1", channels="cache")
+        answers["child"] = await _text(s, "predict", image=str(outside / "eu.npy"), model="mcp-eu-1", channels="cache",
+                                       workspace="sandbox")
+        assert len(set(answers.values())) == 1, answers
+        assert answers["child"].startswith(refused), answers["child"]
+        missing = await _text(s, "predict", image="missing.npy", model="mcp-eu-1",
+                              channels="cache")  # inside: may say so
+        assert missing.startswith(f"error: ValueError: no such file {inputs.resolve() / 'missing.npy'}"), missing
+        return ref
+
+    ref = _serve(env, script)
+
+    async def moved(s):
+        got = json.loads(await _text(s, "predict", image="eu.npy", model="mcp-eu-1", channels="cache"))
+        return got["probs"], await _text(s, "predict", image=str(inputs / "eu.npy"), model="mcp-eu-1", channels="cache")
+
+    got, default = _serve({**env, "GOTRAIN_MCP_INPUT_DIR": str(custom)}, moved)
+    assert _same_probs(got, ref)
+    assert default.startswith(f"error: ValueError: image files must be inside {custom.resolve()} "), default
+    assert _fingerprint(w) == before
 
 
 def test_http_transport_answers_initialize_and_list_tools(ws, env, tmp_path):

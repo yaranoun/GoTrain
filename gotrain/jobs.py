@@ -9,15 +9,23 @@ job.json (atomic rewrite under a per-job flock). Guards:
   - a GPU job is refused, never queued, while a session lease or the machine-wide GPU lock is held; the job's process
     then takes the lock itself through the usual paths (runs.launch, engine.data build, runs.evaluate, runs.finalize);
   - train-run / evaluate-run run only in a sandbox; a task finalized machine-wide gets no more training;
+  - a budget is finite and at most BUDGET_CAP GPU min (BUDGET_CAP_OPERATOR in operator mode); a session id is a plain
+    name (never a path): an existing session of the same task and arm, or a new <task>__<arm>__<UTC stamp>;
+  - cancelling a session or train job also stops the training runs it launched (each lives in its own process group;
+    a run belongs to a job when its process carries the job's GOTRAIN_JOB_DIR); a failed or lost job's runs are
+    stopped the same way by cancel_job; a finalize job is never cancelled; default mode cancels only sandbox jobs;
+  - the operator's finalize (the finalize job, or a session job with phase finalize) needs an arm main session with
+    level1 and reflect complete and level2 complete (or in the same job), in that order;
   - the finalize job prints only {task, run_id, vault_entry_hash}, never a test number.
 
 CLI: python -m gotrain.jobs list | get <job_id> | log <job_id> [-n N] | cancel <job_id> [--reason R]
-Internal: _exec, train-run, evaluate-run, finalize (started by the builders below, not by hand).
+Internal: _exec, train-run, evaluate-run, stop-session-runs, finalize (started by the code below, not by hand).
 """
 
 import argparse
 import fcntl
 import json
+import math
 import os
 import re
 import secrets
@@ -40,10 +48,15 @@ STATUSES = ("running", "done", "failed", "cancelled", "lost")
 MANUAL_STAGES = ("screen", "train")  # stages a manual (MCP) run may use; seed repeats and Level 2 stay the harness's
 WAIT_MAX_S = 600
 KILL_GRACE_S = 10.0
-KILL_GRACE_S_KIND = {"train": 30.0}  # train-run first stops its run through runs.kill (up to ~10 s), then exits
+KILL_GRACE_S_KIND = {"train": 30.0, "session": 30.0}  # train-run first stops its run through runs.kill (~10 s)
+BUDGET_CAP = 60.0            # GPU min per session / manual session in default mode (the chain's B)
+BUDGET_CAP_OPERATOR = 600.0  # operator mode (R = B/10 = 60 min per run at most)
+FINALIZE_NEEDS = ("level1", "reflect", "level2")  # phases complete before the operator's finalize (plan §4.1)
 JOB_DIR_ENV = "GOTRAIN_JOB_DIR"      # set for the child: a subcommand records its result in job.json
 _ID = re.compile(r"^[a-z][a-z0-9_]*-\d{8}T\d{6}Z-[0-9a-f]{4}$")
 _KIND = re.compile(r"^[a-z][a-z0-9_]*$")
+_SID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,159}")  # fullmatch: a session id is a file name, never a path
+REASON_MAX = 500
 _PROCS: dict[str, subprocess.Popen] = {}  # _exec processes started here (polled, so they get reaped)
 
 
@@ -211,7 +224,7 @@ def get(job_id: str) -> dict:
         job = _read(job_dir)  # re-read: the supervisor may have recorded the exit just now
         if job["status"] == "running" and job.get("returncode") is None and job.get("finished_at") is None \
                 and not _alive(job.get("pid"), job.get("pid_start")):
-            job = {**job, "status": "lost", "lost_at": _now()}
+            job = {**job, "status": "cancelled" if job.get("cancel_requested") else "lost", "lost_at": _now()}
             _write(job_dir, job)
     return job
 
@@ -248,24 +261,32 @@ def wait(job_id: str, timeout_s: float = 60) -> dict:
 
 def cancel(job_id: str, reason: str = "") -> dict:
     """SIGTERM to the job's process group (its supervisor forwards it to the child), SIGKILL after the grace period
-    (10 s; 30 s for a training job). Returns the job dict."""
+    (10 s; 30 s for a training or session job), then the training runs this job launched are stopped through the
+    harness (runs.kill). A finalize job is never cancelled; default mode cancels only jobs of the job workspace."""
     job_dir = _dir(job_id)
     job = get(job_id)
+    if job.get("kind") == "finalize":
+        raise JobError("a finalize job is never cancelled: once the test split is opened, stopping it would use up the "
+                       "task's one test touch with no vault entry; it ends on its own")
+    if not operator() and not _inside(Path(job["workspace"]).resolve(), JOB_WS):
+        raise JobError(f"{job_id} is an operator job (workspace {job['workspace']}): cancel it from the operator "
+                       f"server (GOTRAIN_MCP_OPERATOR=1)")
+    reason = " ".join((reason or "").split())[:REASON_MAX]
     if job["status"] != "running":
-        if job["status"] == "lost" and _alive(job.get("child_pid")):
-            _killpg(job["child_pid"], signal.SIGKILL)  # orphaned child of a lost supervisor
-        return job
-    job = _update(job_dir, cancel_requested=True, cancel_reason=(reason or "").strip() or None, cancel_at=_now())
+        if job["status"] == "lost":
+            _kill_same(job.get("child_pid"), job.get("child_pid_start"), signal.SIGKILL)  # orphan of a lost supervisor
+        return _stop_job_runs(job_dir, job, reason)
+    job = _update(job_dir, cancel_requested=True, cancel_reason=reason or None, cancel_at=_now())
     _killpg(job.get("pid"), signal.SIGTERM)
     deadline = time.time() + KILL_GRACE_S_KIND.get(job["kind"], KILL_GRACE_S)
     while time.time() < deadline:
         job = get(job_id)
         if job["status"] != "running":
-            return job
+            return _stop_job_runs(job_dir, job, reason)
         time.sleep(0.2)
     job = _read(job_dir)
-    for pid in (job.get("child_pid"), job.get("pid")):
-        _killpg(pid, signal.SIGKILL)
+    for pid, start in ((job.get("child_pid"), job.get("child_pid_start")), (job.get("pid"), job.get("pid_start"))):
+        _kill_same(pid, start, signal.SIGKILL)
     t0 = time.time()
     while time.time() - t0 < 5 and _alive(job.get("pid"), job.get("pid_start")):
         _reap(job_id)
@@ -276,7 +297,65 @@ def cancel(job_id: str, reason: str = "") -> dict:
         if job["status"] == "running":
             job = {**job, "status": "cancelled", "returncode": -signal.SIGKILL, "finished_at": _now()}
             _write(job_dir, job)
-    return job
+    return _stop_job_runs(job_dir, job, reason)
+
+
+def _kill_same(pid: int | None, start: str | None, sig: int) -> None:
+    """Signal pid's process group only if pid is still the process recorded (same start time): never a reused pid."""
+    if pid and start is not None and _alive(pid, start):
+        _killpg(pid, sig)
+
+
+def _latest_runs(ledger_path: Path) -> dict[str, dict]:
+    return {r["run_id"]: r for r in _jsonl(ledger_path) if r.get("run_id")}  # last line per run wins (ledger.runs)
+
+
+def _launched_by(pid, job_dir: Path) -> bool:
+    """pid runs under this job: its environment carries the job's GOTRAIN_JOB_DIR (_exec -> child -> runs.launch, which
+    passes os.environ on). Gone or unreadable: False, so a run that cannot be tied to this job is never killed."""
+    try:
+        env = Path(f"/proc/{int(pid)}/environ").read_bytes().split(b"\0")
+    except (OSError, TypeError, ValueError):
+        return False
+    return f"{JOB_DIR_ENV}={job_dir}".encode() in env
+
+
+def _stop_job_runs(job_dir: Path, job: dict, reason: str = "") -> dict:
+    """After a session or train job stopped (cancelled, lost or failed): kill the training runs it launched that are
+    still running. gotrain.run dies on SIGTERM without cleanup, and each run sits in its own process group holding the
+    GPU lock. Only runs whose process carries this job's GOTRAIN_JOB_DIR are touched: never another job's or the
+    chain's runs of the same session id."""
+    if job.get("kind") not in ("session", "train") or job.get("status") not in ("cancelled", "lost", "failed"):
+        return job
+    meta = job.get("meta") or {}
+    sid = meta.get("session_id")
+    if not sid or meta.get("dry_run"):
+        return job
+    job_dir = Path(job_dir).resolve()
+    ws = Path(job["workspace"])
+    mine = sorted(rid for rid, r in _latest_runs(ws / "ledger.jsonl").items()
+                  if r.get("session_id") == sid and r.get("status") == "running"
+                  and _launched_by(r.get("pid"), job_dir))
+    if not mine:
+        return job
+    env = {k: v for k, v in os.environ.items() if k not in (state.HOLDS_GPU_ENV, state.LEASE_ENV, JOB_DIR_ENV)}
+    env.update(GOTRAIN_WORKSPACE=str(ws), GOTRAIN_MCP_WORKSPACE=str(JOB_WS), PYTHONUNBUFFERED="1",
+               PYTHONPATH=os.pathsep.join(p for p in (str(REPO), os.environ.get("PYTHONPATH")) if p))
+    why = (reason or "").strip()[:REASON_MAX] or f"{job['kind']} job {job['job_id']} {job['status']} (MCP)"
+    try:
+        res = subprocess.run([sys.executable, "-m", "gotrain.jobs", "stop-session-runs", f"--session-id={sid}",
+                              f"--reason={why}", *(f"--run-id={r}" for r in mine)], cwd=REPO, env=env,
+                             stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=120)
+        stopped = json.loads(res.stdout.strip().splitlines()[-1]) if res.returncode == 0 else None
+        err = None if res.returncode == 0 else (res.stderr.strip().splitlines() or [f"exit {res.returncode}"])[-1]
+    except (OSError, subprocess.TimeoutExpired, ValueError, IndexError) as e:
+        stopped, err = None, f"{type(e).__name__}: {e}"
+    try:
+        with (job_dir / "log.txt").open("a") as log:
+            log.write(f"[gotrain.jobs] runs stopped: {stopped}{f' (error: {err})' if err else ''}\n")
+    except OSError:
+        pass
+    return _update(job_dir, stopped_runs=stopped, **({"stop_runs_error": err} if err else {}))
 
 
 def log_tail(job_id: str, lines: int = 60) -> str:
@@ -324,6 +403,39 @@ def _inside(path: Path, root: Path) -> bool:
     return path == root or root in path.parents
 
 
+def _budget(budget) -> float:
+    """B in GPU minutes: finite, > 0 and at most the mode's cap (NaN / inf / huge values would hold the GPU)."""
+    cap = BUDGET_CAP_OPERATOR if operator() else BUDGET_CAP
+    try:
+        b = float(budget)
+    except (TypeError, ValueError):
+        raise JobError(f"budget must be a number of GPU minutes, not {budget!r}") from None
+    if not math.isfinite(b) or not 0 < b <= cap:
+        more = "" if operator() else f"; operator mode allows up to {BUDGET_CAP_OPERATOR:g}"
+        raise JobError(f"budget must be a finite number of GPU minutes in (0, {cap:g}]{more}; got {budget!r}")
+    return b
+
+
+def _session_id(session_id: str, task: str, arm: str, ws: Path) -> str:
+    """A session id given by a client: a plain name (it becomes transcript and figure file names), either an existing
+    session of this task and arm in the workspace, or a new id <task>__<arm>__<YYYYmmddTHHMMSSZ> (operator mode: any
+    plain name, e.g. the chain's <task>__main__chain)."""
+    if not isinstance(session_id, str) or not _SID.fullmatch(session_id) or ".." in session_id:
+        raise JobError(f"invalid session_id {session_id!r}: letters, digits, '_', '-', '.' only (no '/', no '..'); "
+                       f"leave it empty for a new session")
+    h = next((r for r in _jsonl(ws / "sessions.jsonl")
+              if r.get("type") == "session_start" and r.get("session_id") == session_id), None)
+    if h is not None:
+        if (h.get("task"), h.get("arm")) != (task, arm):
+            raise JobError(f"session {session_id} is a {h.get('task')} / arm {h.get('arm')} session, "
+                           f"not {task} / {arm}")
+        return session_id
+    if not operator() and not re.fullmatch(rf"{re.escape(task)}__{arm}__\d{{8}}T\d{{6}}Z", session_id):
+        raise JobError(f"unknown session {session_id} in {ws}: to resume, pass an id from list_sessions("
+                       f"workspace='sandbox'); a new id must be {task}__{arm}__<YYYYmmddTHHMMSSZ> (or leave it empty)")
+    return session_id
+
+
 def download_task(task: str) -> dict:
     """Download one GEO-Bench task from Hugging Face into the dataset folder (no GPU)."""
     _task(task)
@@ -355,14 +467,40 @@ def start_session(task: str, budget: float | None, phases: str = "level1,reflect
         if not operator() and not _inside(ws, JOB_WS.resolve()):
             raise JobError(f"workspace must be inside the MCP job workspace {JOB_WS} (operator mode is off)")
     plist = [p.strip() for p in (phases or "").split(",") if p.strip()]
-    if not plist or any(p not in sess.PHASES for p in plist):
-        raise JobError(f"phases must be drawn from {sess.PHASES}, comma-separated, in that order")
+    if not plist or plist != [p for p in sess.PHASES if p in plist]:
+        raise JobError(f"phases must be drawn from {sess.PHASES}, comma-separated, in that order, each once")
     if budget is None and not session_id:
         raise JobError("budget (GPU minutes, B) is required for a new session")
+    if budget is not None:
+        budget = _budget(budget)
+    if session_id:
+        session_id = _session_id(session_id, task, arm, ws)
+    rows = [r for r in _jsonl(ws / "sessions.jsonl") if session_id and r.get("session_id") == session_id]
+    done = {r.get("phase") for r in rows if r.get("type") == "phase_done"}
+    if "level1" not in plist:
+        if not rows:
+            raise JobError(f"phases {','.join(plist)} without level1 need session_id of an existing session (see "
+                           f"list_sessions(workspace='sandbox'))")
+        if {"level2", "finalize"} & set(plist) and "level1" not in done:
+            raise JobError(f"session {session_id} has not completed level1")
+    if "finalize" in plist and arm == "main" and not dry_run:  # the plan's order before the one test touch
+        missing = [p for p in ("level1", "reflect") if p not in done] + [
+            p for p in ("level2",) if p not in done | set(plist)]
+        if missing:
+            raise JobError(f"finalize needs level1 and reflect already complete (and level2 complete or in this job); "
+                           f"session {session_id or '(new)'} is missing {', '.join(missing)}: run them first")
     if not dry_run:
         _not_finalized(task)
     if not session_id and "level1" in plist:
-        session_id = sess.new_session_id(task, arm)  # known before the job starts: traceable from the job
+        taken = {r.get("session_id") for r in _jsonl(ws / "sessions.jsonl")}
+        taken |= {(j.get("meta") or {}).get("session_id") for j in list_jobs("session", 500)}
+        for _ in range(3):
+            session_id = sess.new_session_id(task, arm)  # known before the job starts: traceable from the job
+            if session_id not in taken:
+                break
+            time.sleep(1.05)  # ids are stamped to the second
+        else:
+            raise JobError("another session of this task and arm was just started: try again in a second")
     argv = [sys.executable, "-m", "gotrain.run", "--task", task, "--arm", arm, "--phases", ",".join(plist)]
     if budget is not None:
         argv += ["--budget", str(float(budget))]
@@ -381,24 +519,36 @@ def launch_run(task: str, config: dict, hypothesis: str, budget: float = 10.0, p
     B = budget: each run is capped at R = B/10 GPU min, the session's Level 1 pot is 0.75 B)."""
     _task(task)
     if not isinstance(config, dict):
-        raise JobError("config must be an object of config overrides (see list_backbones / DEFAULTS)")
+        raise JobError("config must be an object of config overrides of the engine defaults")
     if not (hypothesis or "").strip():
         raise JobError("hypothesis is required: one or two sentences on what you expect and why")
     if stage not in MANUAL_STAGES:
         raise JobError(f"stage must be one of {MANUAL_STAGES}")
-    if not budget or float(budget) <= 0:
-        raise JobError("budget must be > 0 GPU minutes")
-    _not_finalized(task)
     sid = manual_session_id(task)
     h = next((r for r in _jsonl(JOB_WS / "sessions.jsonl")
               if r.get("type") == "session_start" and r.get("session_id") == sid), None)
-    if h is not None and float(h["B"]) != float(budget):
-        raise JobError(f"the manual session {sid} has budget B={h['B']:g} (each run capped at {h['R']:g} GPU min); "
-                       f"pass budget={h['B']:g}")
+    if h is not None:  # the stored B first: a fresh B would be refused by session.start anyway
+        try:
+            same = float(budget) == float(h["B"])
+        except (TypeError, ValueError):
+            same = False
+        if not same:
+            raise JobError(f"the manual session {sid} has budget B={h['B']:g} (each run capped at {h['R']:g} GPU "
+                           f"min); pass budget={h['B']:g}")
+    budget = _budget(budget)
+    _not_finalized(task)
     try:
         cfg = json.dumps(config)
     except (TypeError, ValueError) as e:
         raise JobError(f"config is not JSON-serializable: {e}") from None
+    from gotrain import runs
+    from gotrain import session as sess
+
+    try:  # the checks runs.launch makes (keys, ranges, backbone/weights), before a GPU job is started
+        runs.validate_config(task, {**{k: v for k, v in config.items() if k != "time_limit_min"},
+                                    "time_limit_min": sess.pots(budget)["R"]})
+    except runs.ConfigError as e:
+        raise JobError(f"invalid config: {e}") from None
     argv = [sys.executable, "-m", "gotrain.jobs", "train-run", f"--task={task}", f"--config={cfg}",
             f"--hypothesis={hypothesis.strip()}", f"--budget={float(budget)}", f"--stage={stage}"]
     if parent_run_id:
@@ -435,9 +585,32 @@ def finalize(task: str, session_id: str, rationale: str) -> dict:
         raise JobError("rationale is required")
     if not state.test_allowed(task):
         raise JobError(f"{task} is already finalized: its test split was opened once (machine-wide test registry)")
+    session_id = session_id.strip()
+    if not _SID.fullmatch(session_id) or ".." in session_id:
+        raise JobError(f"invalid session_id {session_id!r}")
+    _check_finalizable([r for r in _jsonl(main_workspace() / "sessions.jsonl") if r.get("session_id") == session_id],
+                       session_id, task)
     argv = [sys.executable, "-m", "gotrain.jobs", "finalize", f"--task={task}", f"--session-id={session_id}",
             f"--rationale={rationale.strip()}"]
     return start("finalize", argv, workspace=main_workspace(), gpu=True, meta={"task": task, "session_id": session_id})
+
+
+def _check_finalizable(rows: list[dict], session_id: str, task: str) -> None:
+    """The phase rules gotrain.run and the plan apply before the one test touch: an arm main session of this task,
+    not a dry run, with level1, reflect (lessons written before any test) and level2 complete."""
+    h = next((r for r in rows if r.get("type") == "session_start"), None)
+    if h is None:
+        raise JobError(f"unknown session {session_id} in the main workspace {main_workspace()}")
+    if h.get("task") != task:
+        raise JobError(f"session {session_id} is a {h.get('task')} session, not {task}")
+    if h.get("arm") != "main" or h.get("dry_run"):
+        raise JobError(f"session {session_id} is arm {h.get('arm')}{' (dry run)' if h.get('dry_run') else ''}: only "
+                       f"an arm main session is finalized")
+    done = {r.get("phase") for r in rows if r.get("type") == "phase_done"}
+    missing = [p for p in FINALIZE_NEEDS if p not in done]
+    if missing:
+        raise JobError(f"session {session_id} has not completed {', '.join(missing)}: finalize comes after level1, "
+                       f"reflect (lessons written before any test touch) and level2")
 
 
 # --------------------------------------------------------------------------- supervisor (_exec)
@@ -472,7 +645,7 @@ def _exec(job_dir: Path, argv: list[str]) -> int:
                 sig["child"] = child
                 if sig["got"] is not None:  # arrived while the child was being started
                     _killpg(child.pid, sig["got"])
-                _update(job_dir, child_pid=child.pid)
+                _update(job_dir, child_pid=child.pid, child_pid_start=_proc_start(child.pid))
                 rc = child.wait()
         with _locked(job_dir):
             job = _read(job_dir)
@@ -509,6 +682,8 @@ def _train_run(a) -> int:
     config = json.loads(a.config)
     if not isinstance(config, dict):
         raise ValueError("--config must be a JSON object of config overrides")
+    if not math.isfinite(a.budget) or not 0 < a.budget <= BUDGET_CAP_OPERATOR:
+        raise ValueError(f"--budget must be finite and in (0, {BUDGET_CAP_OPERATOR:g}] GPU minutes")
     from gotrain import ledger, runs
     from gotrain import session as sess
 
@@ -580,11 +755,41 @@ def _finalize(a) -> int:
     from gotrain import runs
     from gotrain import session as sess
 
+    rows = sess.records(a.session_id)
+    _check_finalizable(rows, a.session_id, a.task)
     h = sess.header(a.session_id)
-    if h["task"] != a.task:
-        raise PermissionError(f"session {a.session_id} is a {h['task']} session, not {a.task}")
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)  # from here on, a signal could land between 'opened' and the vault
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
     e = runs.finalize(sess.from_header(h), a.rationale, launched_by="operator")
     _result({"task": a.task, "run_id": e["run_id"], "vault_entry_hash": e["entry_hash"]})
+    return 0
+
+
+def _stop_session_runs_cmd(a) -> int:
+    """Kill the listed runs of the session still running in this workspace (runs.kill without the session: harness
+    runs too). The caller lists only runs its job launched (_stop_job_runs)."""
+    from gotrain import is_sandbox
+
+    if not is_sandbox() and not operator():
+        raise PermissionError("stop-session-runs outside a sandbox workspace is operator-only")
+    from gotrain import ledger, runs
+
+    stopped, pids = [], []
+    for run_id in sorted(set(a.run_id or [])):
+        rec = ledger.runs().get(run_id) or {}
+        if rec.get("session_id") != a.session_id or rec.get("status") != "running":
+            continue
+        try:
+            runs.kill(run_id, a.reason)
+            stopped.append(run_id)
+            pids.append(rec.get("pid"))
+        except ValueError:
+            pass  # it stopped on its own meanwhile
+    print(json.dumps(stopped), flush=True)
+    if not any(_alive(pid) for pid in pids):  # all gone: runs' 60 s lingering-process reaper is not needed
+        for t in threading.enumerate():
+            if isinstance(t, threading.Timer):
+                t.cancel()
     return 0
 
 
@@ -617,6 +822,10 @@ def main(argv: list[str] | None = None) -> None:
     p = sub.add_parser("evaluate-run")
     p.add_argument("run_id")
     p.add_argument("--tta", action="store_true")
+    p = sub.add_parser("stop-session-runs")
+    p.add_argument("--session-id", required=True)
+    p.add_argument("--run-id", action="append", default=[])
+    p.add_argument("--reason", default="session job cancelled via MCP")
     p = sub.add_parser("finalize")
     p.add_argument("--task", required=True)
     p.add_argument("--session-id", required=True)
@@ -633,7 +842,8 @@ def main(argv: list[str] | None = None) -> None:
         elif a.cmd == "cancel":
             print(json.dumps(cancel(a.job_id, a.reason), indent=1))
         else:
-            rc = {"train-run": _train_run, "evaluate-run": _evaluate_run, "finalize": _finalize}[a.cmd](a)
+            rc = {"train-run": _train_run, "evaluate-run": _evaluate_run, "finalize": _finalize,
+                  "stop-session-runs": _stop_session_runs_cmd}[a.cmd](a)
             raise SystemExit(rc)
     except (JobError, PermissionError, ValueError, RuntimeError, FileNotFoundError, KeyError) as e:
         print(f"{type(e).__name__}: {e}", file=sys.stderr, flush=True)

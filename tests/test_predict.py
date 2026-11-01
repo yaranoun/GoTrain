@@ -9,6 +9,8 @@ import io
 import json
 import shutil
 
+import re
+
 import numpy as np
 import pytest
 import segmentation_models_pytorch as smp
@@ -118,8 +120,18 @@ def test_classification_probs_and_every_input_form(world, tmp_path):
     np.save(buf, x)
     b64 = "b64npy:" + base64.b64encode(buf.getvalue()).decode()
     for image in (str(tmp_path / "chw.npy"), tmp_path / "hwc.npy", b64, x.astype(np.float32)):
-        res = predict.predict(image, model="pt-eu-a")  # the task comes from the model
+        res = predict.predict(image, model="pt-eu-a", channels="cache")  # the task comes from the model
         assert res["task"] == EU and np.allclose(_probs(res), _probs(ref), atol=1e-6)
+    # m-eurosat's 13 channels fit both orders: "auto" refuses and asks; "disk" is GEO-Bench's order (B8A last)
+    with pytest.raises(ValueError, match="pass channels='cache' or channels='disk'"):
+        predict.predict(x, model="pt-eu-a")
+    perm = tasks.CHANNELS[EU]["permutation"]
+    disk = np.empty_like(x)
+    disk[perm] = x  # cache = disk[perm]
+    res = predict.predict(disk, model="pt-eu-a", channels="disk")
+    assert np.allclose(_probs(res), _probs(ref), atol=1e-6)
+    with pytest.raises(ValueError, match="channels must be one of"):
+        predict.predict(x, model="pt-eu-a", channels="rgb")
 
 
 def test_load_input_forms_and_refusals(world, tmp_path):
@@ -146,6 +158,79 @@ def test_load_input_forms_and_refusals(world, tmp_path):
         predict.load_input(EU, np.zeros((5, 32, 32)))
     with pytest.raises(ValueError, match="no such file"):
         predict.load_input(EU, str(tmp_path / "missing.npy"))
+
+
+def test_input_root_confines_file_paths(world, tmp_path):
+    """input_root (the MCP server): a file path is resolved (relative paths from the root, symlinks followed) and must
+    lie inside the root, checked before any file access; every refusal reads the same, whether or not the file
+    exists. Without input_root (CLI, library) a path anywhere still works."""
+    x = VAL[EU]["x"][0]
+    root, outside = tmp_path / "inputs", tmp_path / "outside"
+    (root / "sub").mkdir(parents=True)
+    outside.mkdir()
+    for p in (root / "eu.npy", root / "sub" / "eu.npy", outside / "eu.npy"):
+        np.save(p, x)
+    (outside / "notes.txt").write_text("not an image\n")
+    (root / "link.npy").symlink_to(outside / "eu.npy")
+    (root / "linkdir").symlink_to(outside, target_is_directory=True)
+    (root / "dangling.npy").symlink_to(outside / "missing.npy")
+    (root / "alias.npy").symlink_to(root / "sub" / "eu.npy")
+    ref = _probs(predict.predict("val:0", model="pt-eu-a"))
+
+    for image in (str(root / "eu.npy"), root / "sub" / "eu.npy", "eu.npy", "sub/eu.npy", "./sub/../eu.npy",
+                  "alias.npy", f" {root / 'eu.npy'} "):
+        for r in (root, str(root)):
+            res = predict.predict(image, model="pt-eu-a", input_root=r, channels="cache")
+            assert np.allclose(_probs(res), ref, atol=1e-6), (image, r)
+    msgs = set()
+    for image in (str(outside / "eu.npy"), outside / "missing.npy", str(outside / "notes.txt"), "../outside/eu.npy",
+                  "../outside/missing.npy", "link.npy", "linkdir/eu.npy", "dangling.npy", "/etc/hostname", str(root),
+                  ".", str(tmp_path)):
+        with pytest.raises(ValueError, match="image files must be inside") as e:
+            predict.predict(image, model="pt-eu-a", input_root=root, channels="cache")
+        msgs.add(str(e.value))
+    assert len(msgs) == 1 and str(root.resolve()) in msgs.pop() and str(outside) not in str(e.value)
+    with pytest.raises(ValueError, match="no such file"):  # inside the root it may say so
+        predict.predict("missing.npy", model="pt-eu-a", input_root=root, channels="cache")
+    # without input_root: any path, as before
+    for image in (str(outside / "eu.npy"), root / "link.npy"):
+        assert np.allclose(_probs(predict.predict(image, model="pt-eu-a", channels="cache")), ref, atol=1e-6)
+
+
+def test_input_root_refuses_before_touching_the_file(world, tmp_path, monkeypatch):
+    """Outside the root the file is never checked, sized or read (resolve() alone walks the path's links)."""
+    from pathlib import Path
+
+    root, outside = tmp_path / "inputs", tmp_path / "outside"
+    root.mkdir()
+    outside.mkdir()
+    np.save(outside / "eu.npy", VAL[EU]["x"][0])
+    touched = []
+    for name in ("is_file", "is_dir", "exists", "read_bytes", "read_text", "open"):
+        real = getattr(Path, name)
+        monkeypatch.setattr(Path, name, lambda self, *a, _n=name, _r=real, **k: touched.append((_n, self)) or
+                            _r(self, *a, **k))
+    for image in (str(outside / "eu.npy"), str(outside / "missing.npy")):
+        with pytest.raises(ValueError, match="image files must be inside"):
+            predict._load(EU, image, None, root)
+    assert touched == []
+
+
+@pytest.mark.parametrize("kind", ["unknown user", "symlink loop"])
+def test_input_root_refusal_is_uniform_for_unknown_users_and_symlink_loops(world, tmp_path, kind):
+    """With an input root, '~' is not expanded ('~user/x' is a path inside the root) and a symlink loop outside the
+    root gets the refusal: nothing tells whether a host user or a file exists."""
+    root, outside = tmp_path / "inputs", tmp_path / "outside"
+    root.mkdir()
+    outside.mkdir()
+    (outside / "loop").symlink_to(outside / "loop")
+    if kind == "unknown user":
+        for user in ("gotrain-no-such-user-0", "root"):
+            with pytest.raises(ValueError, match=re.escape(f"no such file {root.resolve()}/~{user}/eu.npy")):
+                predict._load(EU, f"~{user}/eu.npy", None, root)
+        return
+    with pytest.raises(ValueError, match="image files must be inside"):
+        predict._load(EU, str(outside / "loop"), None, root)
 
 
 def test_composite_is_the_mean_of_its_members(world):

@@ -22,7 +22,7 @@ import threading
 from collections import Counter
 from pathlib import Path
 
-from gotrain import REPO, WORKSPACE, ledger, noise, registry
+from gotrain import REPO, WORKSPACE, is_sandbox, ledger, noise, registry
 from gotrain import session as sess
 from gotrain.engine import tasks
 
@@ -75,6 +75,8 @@ def _out(out_dir) -> Path:
     out = Path(out_dir).expanduser().resolve()
     if out == REPO.resolve() or out == WORKSPACE or out in WORKSPACE.parents:
         raise ValueError(f"out_dir {out} is the workspace, a parent of it, or the repository root: refused")
+    if WORKSPACE in out.parents and not is_sandbox():
+        raise ValueError(f"out_dir {out} is inside the results workspace {WORKSPACE}: refused")
     out.mkdir(parents=True, exist_ok=True)
     return out
 
@@ -85,6 +87,19 @@ def _strip(rec: dict | None) -> dict | None:
 
 # --------------------------------------------------------------------------- tasks and models
 
+def _classes(task: str, prof: dict | None = None) -> list[str] | None:
+    """Class names: tasks.CLASS_NAMES (fixes HF's order where needed), else the workspace profile's."""
+    if tasks.CLASS_NAMES.get(task):
+        return tasks.CLASS_NAMES[task]
+    if prof is None:
+        path = WORKSPACE / "profiles" / task / "profile.json"
+        try:
+            prof = json.loads(path.read_text())
+        except (OSError, ValueError):
+            prof = None
+    return (prof or {}).get("classes")
+
+
 def list_tasks() -> list[dict]:
     """Trainable tasks: type, scope, bands, classes, the production model, whether this workspace finalized it."""
     finalized = {e["task"] for e in _vault()}
@@ -94,7 +109,7 @@ def list_tasks() -> list[dict]:
             continue
         prod = registry.production(t)
         out.append({"task": t, "type": spec["type"], "scope": tasks.scope(t), "bands": tasks.CHANNELS[t]["names"],
-                    "classes": tasks.CLASS_NAMES.get(t), "production_model": prod and prod["model_id"],
+                    "classes": _classes(t), "production_model": prod and prod["model_id"],
                     "finalized": t in finalized})
     return out
 
@@ -113,7 +128,7 @@ def task_info(task: str) -> dict:
         "task": task, "type": spec["type"], "sensor": spec["sensor"], "benchmark": spec["benchmark"],
         "trainable": _trainable(task), "scope": tasks.scope(task), "gsd_m": tasks.GSD_M.get(task),
         "bands": ch and ch["names"], "band_roles": tasks.band_roles(task),
-        "classes": tasks.CLASS_NAMES.get(task) or (prof or {}).get("classes"), "ignore_index": tasks.ignore_index(task),
+        "classes": _classes(task, prof), "ignore_index": tasks.ignore_index(task),
         "value_scale": tasks.VALUE_SCALE.get(task), "display_scale": tasks.display_scale(task),
         "group_by": tasks.GROUP_BY.get(task), "data_note": DATA_NOTES.get(task),
         "profile": None if prof is None else {

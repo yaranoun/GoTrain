@@ -12,9 +12,17 @@ Workspaces:
   main     GOTRAIN_MCP_MAIN_WORKSPACE (default the repo's workspace/): operator mode only (finalize, arm main,
            registry and store writes).
 
+  inputs   INPUT_DIR (GOTRAIN_MCP_INPUT_DIR, default <sandbox>/inputs): the only folder predict reads image files from.
+
 Guards:
-  - default mode writes only inside the sandbox workspace, plus the dataset folder (download_task, store_pull) and
-    the store's probe object (store_doctor);
+  - default mode writes only inside the sandbox workspace, plus the dataset folder and the Hugging Face hub cache
+    (download_task, store_pull), the machine-wide state dir (GPU lock, lease), the shared data cache (build_cache,
+    or a training job that finds its cache missing), training logs in <sandbox>/../logs, and the store's probe object
+    (store_doctor);
+  - at startup the sandbox must be separate from the results, main and default workspaces (neither equal, inside,
+    containing nor next to them: a shared parent would share <parent>/logs): otherwise the server refuses to start;
+  - predict reads files only under INPUT_DIR (plus 'val:<i>' and base64 inputs): never an arbitrary host path;
+  - budgets are finite and capped (60 GPU min, 600 in operator mode); session ids are plain names, never paths;
   - a GPU job is refused, never queued, while the machine-wide GPU lock or a session lease is held; a task finalized
     machine-wide gets no more training (the refusal text of gotrain.jobs / gotrain.run is passed on, not bypassed);
   - operator tools (finalize, registry_sync, promote, archive, store_push) are registered only when
@@ -44,7 +52,7 @@ from pathlib import Path
 
 import anyio
 from mcp.server.fastmcp import FastMCP, Image
-from mcp.types import ToolAnnotations
+from mcp.types import CallToolResult, TextContent, ToolAnnotations
 
 import gotrain
 from gotrain import REPO, jobs, mcp_ops, state
@@ -55,7 +63,9 @@ OPERATOR_TOOLS = ("finalize", "registry_sync", "promote", "archive", "store_push
 WORKSPACES = ("results", "sandbox")
 CHILD_TIMEOUT_S = 300
 LOG_TAIL = 20
+WAIT_DEFAULT_S, WAIT_MAX_S = 25, 50  # answer within common client request timeouts (~60 s): poll again
 LOCAL_HOSTS = ("127.0.0.1", "localhost", "::1")
+INPUT_DIR = Path(os.environ.get("GOTRAIN_MCP_INPUT_DIR") or jobs.JOB_WS / "inputs").expanduser().resolve()
 _INPROC = threading.Lock()  # in-process reads share pyplot and runs.sync: one at a time
 _PROTO = None  # stdio: the protocol stream (a private copy of fd 1), kept referenced for the whole run
 
@@ -80,6 +90,26 @@ if OPERATOR:
         "\nOperator mode: finalize (a task's one test evaluation in the main workspace; code picks the session's "
         "incumbent; the job prints only the vault entry hash), registry_sync, promote, archive, store_push; "
         "start_session also takes arm 'main' and 'off'.")
+
+
+def _check_workspaces() -> None:
+    """The sandbox (job) workspace must be its own folder: never the results or main workspace, inside one, or a
+    parent of one. Otherwise sandbox writes (views, reports, predictions, jobs) would land in published results."""
+    sandbox = jobs.JOB_WS.resolve()
+    wss = (("results", gotrain.WORKSPACE.resolve()), ("main", jobs.main_workspace()),
+           ("default", gotrain.DEFAULT_WORKSPACE.resolve()))
+    for name, ws in wss:
+        if sandbox == ws or ws in sandbox.parents or sandbox in ws.parents:
+            raise RuntimeError(f"the MCP sandbox workspace {sandbox} overlaps the {name} workspace {ws}: set "
+                               f"GOTRAIN_MCP_WORKSPACE to a separate folder")
+    for name, ws in wss:  # training logs go to <workspace>/../logs, run ids are numbered per workspace
+        if sandbox.parent == ws.parent:
+            raise RuntimeError(f"the MCP sandbox workspace {sandbox} sits next to the {name} workspace {ws}: both "
+                               f"would write training logs to {ws.parent / 'logs'}; set GOTRAIN_MCP_WORKSPACE to a "
+                               f"folder with its own parent (e.g. <somewhere>/mcp/workspace)")
+
+
+_check_workspaces()
 
 
 @asynccontextmanager
@@ -107,6 +137,13 @@ def _cap(text: str) -> str:
     return f"{text[:TEXT_CAP]}\n[... {len(text) - TEXT_CAP} characters cut]"
 
 
+def _cap_tail(text: str, cap: int) -> str:
+    """Keep the END of a log (its newest lines: the error and the exit line)."""
+    if len(text) <= cap:
+        return text
+    return f"[... {len(text) - cap} earlier characters cut]\n{text[-cap:]}"
+
+
 def _capped(out):
     if isinstance(out, str):
         return _cap(out)
@@ -126,8 +163,8 @@ def _tool(*, read_only: bool = False, capped: bool = True, operator: bool = Fals
         async def call(**kwargs):
             try:
                 out = await anyio.to_thread.run_sync(functools.partial(fn, **kwargs))
-            except (Exception, SystemExit) as e:
-                return _error(e)
+            except (Exception, SystemExit) as e:  # a refusal or failure: isError, text "error: <type>: <message>"
+                return CallToolResult(content=[TextContent(type="text", text=_cap(_error(e)))], isError=True)
             return _capped(out) if capped else out
 
         mcp.add_tool(call, name=fn.__name__, description=inspect.cleandoc(fn.__doc__ or ""),
@@ -205,7 +242,7 @@ def _report_dir(workspace: str) -> str:
 def _job(job: dict, tail: bool = False) -> str:
     out = dict(job)
     if tail:
-        out["log_tail"] = jobs.log_tail(job["job_id"], LOG_TAIL)
+        out["log_tail"] = _cap_tail(jobs.log_tail(job["job_id"], LOG_TAIL), TEXT_CAP // 2)
     return _json(out)
 
 
@@ -337,10 +374,13 @@ def build_cache(task: str) -> str:
 @_tool()
 def start_session(task: str, budget: float | None = None, phases: str = "level1,reflect,level2", arm: str = "dev",
                   session_id: str = "", dry_run: bool = False) -> str:
-    """Background job: an agent session (gotrain.run) with a GPU budget B in minutes (each run capped at B/10, Level
-    1 pot 0.75 B). arm "dev" runs in the sandbox workspace; phases in order from level1, reflect, level2, finalize
-    (finalize is refused in the sandbox); session_id resumes a session for later phases; dry_run plans without
-    launching. A GPU job unless dry_run. Operator mode also takes arm "main" (main workspace) and "off"."""
+    """Background job: an agent session (gotrain.run) with a GPU budget B in minutes (finite, at most 60; 600 in
+    operator mode; each run capped at B/10, Level 1 pot 0.75 B). arm "dev" runs in the sandbox workspace; phases in
+    order, each once, from level1, reflect, level2, finalize (finalize is refused in the sandbox); session_id: empty
+    for a new session, or an existing one of this task and arm (list_sessions(workspace="sandbox")) to resume it for
+    later phases; dry_run plans without launching. A GPU job unless dry_run: refused while the GPU is busy, and for a
+    task already finalized. Operator mode also takes arm "main" (main workspace; finalize only after level1 and
+    reflect are complete, and level2 complete or in the same job) and "off"."""
     if arm != "dev" and not OPERATOR:
         raise PermissionError(f"arm {arm!r} is operator-only (GOTRAIN_MCP_OPERATOR=1); use arm 'dev', which runs in "
                               f"the sandbox workspace {jobs.JOB_WS}")
@@ -352,8 +392,11 @@ def launch_run(task: str, config: dict, hypothesis: str, budget: float = 10.0, p
                stage: str = "train") -> str:
     """Background GPU job: one manual training run in the sandbox workspace (session <task>__mcp__manual; config =
     overrides of the engine defaults, e.g. {"backbone": "resnet18", "weights": "ssl4eo_moco", "epochs": 10};
-    hypothesis = what you expect and why; stage "train" or "screen"). Its result names the run_id: read it with
-    query_runs(workspace="sandbox"), evaluate it with evaluate_run, predict with it."""
+    hypothesis = what you expect and why; stage "train" or "screen"; budget = the manual session's B, finite, at
+    most 60 (600 in operator mode), fixed by the first call: each run is capped at B/10 GPU min and the session's runs
+    share 0.75 B). The config is checked before any job starts; refused while the GPU is busy and for a finalized task.
+    Its result names the run_id: read it with query_runs(workspace="sandbox"), evaluate it with evaluate_run, predict
+    with it."""
     return _job(jobs.launch_run(task, config, hypothesis, budget, parent_run_id or None, stage))
 
 
@@ -379,22 +422,26 @@ def get_job(job_id: str) -> str:
 
 
 @_tool(read_only=True)
-def wait_job(job_id: str, timeout_s: float = 60) -> str:
-    """Wait until a job leaves 'running' or timeout_s passes (at most 600 s); the job and its log tail."""
-    return _job(jobs.wait(job_id, timeout_s), tail=True)
+def wait_job(job_id: str, timeout_s: float = WAIT_DEFAULT_S) -> str:
+    """Wait until a job leaves 'running' or timeout_s passes (default 25 s, at most 50 s, so the call answers within
+    client request timeouts: call it again for a long job); the job and its log tail."""
+    t = float(timeout_s)
+    return _job(jobs.wait(job_id, min(max(0.0, t), WAIT_MAX_S) if t == t else WAIT_DEFAULT_S), tail=True)
 
 
 @_tool()
 def cancel_job(job_id: str, reason: str = "") -> str:
-    """Stop a running job (SIGTERM to its processes, SIGKILL after a grace period; a training run is killed through
-    the harness and keeps its ledger row)."""
+    """Stop a running job: SIGTERM to its processes, SIGKILL after a grace period (10 s; 30 s for session and train
+    jobs). The training runs a session or train job launched are then stopped through the harness (ledger row kept,
+    status killed); calling it on a failed or lost session / train job stops its leftover runs. A finalize job is never
+    cancelled; default mode cancels only jobs of the sandbox workspace."""
     return _job(jobs.cancel(job_id, reason), tail=True)
 
 
 @_tool(read_only=True)
 def job_log(job_id: str, lines: int = 60) -> str:
-    """The last lines of a job's log (at most 2000)."""
-    return jobs.log_tail(job_id, lines) or "(empty log)"
+    """The last lines of a job's log (at most 2000; the newest lines are kept when the text cap applies)."""
+    return _cap_tail(jobs.log_tail(job_id, lines), TEXT_CAP) or "(empty log)"
 
 
 # --------------------------------------------------------------------------- predict, report, store
@@ -416,18 +463,22 @@ print(json.dumps(r, default=str))
 
 @_tool(read_only=True)
 def predict(image: str, task: str = "", model: str = "", device: str = "cpu", tta: bool | None = None,
-            workspace: str = "results"):
+            workspace: str = "results", channels: str = "auto"):
     """Classify or segment one image. image: "val:<i>" (the task's val cache), a path to a .npy ((C,H,W) or (H,W,C)
-    raw sensor values, the task's bands or all its on-disk channels) or .png/.jpg (RGB tasks), "b64npy:<base64 .npy
-    bytes>" or "b64png:<base64 png>". model: "" = the task's production model (else its finalized model), "<task>:vN",
-    or a finished run id (workspace "sandbox" for runs trained through this server). tta: null = as recorded, true /
-    false overrides a single model. device "cpu" (default) or "cuda" (refused while the GPU is busy).
+    raw sensor values, the task's bands or all its on-disk channels) or .png/.jpg (RGB tasks) inside the server's
+    input folder (GOTRAIN_MCP_INPUT_DIR, default <sandbox>/inputs; relative paths are taken from it), "b64npy:<base64
+    .npy bytes>" or "b64png:<base64 png>". model: "" = the task's production model (else its finalized model),
+    "<task>:vN", or a finished run id (workspace "sandbox" for runs trained through this server). tta: null = as recorded, true /
+    false overrides a single model. device "cpu" (default) or "cuda" (refused while the GPU is busy). channels: the
+    channel order of a raw input, "auto" (by count), "cache" (the task's bands, canonical Sentinel-2 order) or "disk"
+    (GEO-Bench's on-disk order); m-eurosat's 13 channels fit both, so "auto" asks you to choose.
     Classification: class probabilities and the top 5. Segmentation: class fractions, the mask (.npy) path and an
     overlay image."""
     if workspace not in WORKSPACES:
         raise ValueError(f"workspace must be one of {WORKSPACES}, not {workspace!r}")
     out_dir = str(jobs.JOB_WS / "predictions")
-    kw = {"image": image, "task": task or None, "model": model, "device": device, "tta": tta, "out_dir": out_dir}
+    kw = {"image": image, "task": task or None, "model": model, "device": device, "tta": tta, "out_dir": out_dir,
+          "input_root": str(INPUT_DIR), "channels": channels}
     if workspace == "results" and device == "cpu":
         from gotrain import predict as P
 

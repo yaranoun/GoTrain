@@ -6,10 +6,14 @@
                                                                   # a Strands agent (Bedrock) answers with the tools
 
 The demo prints one compact block per step: list_tasks -> get_model_card(task) -> predict(image="val:0") ->
-start_session(budget 10, phases level1, dry_run: the agent plans on Bedrock and stops at its first launch, nothing
-trains) -> wait_job, polled a few times -> list_sessions / show_tree in the sandbox workspace. A step that needs
-something this machine lacks (the task's data cache, model files, Bedrock credentials) prints one "skip:" or
-"error:" line and the demo goes on; --skip-session leaves out the session steps (no Bedrock call).
+start_session(budget 10, not a dry run) on a finalized task, which the server refuses before any job starts ("this
+task is already finalized; no more training for it"; asked only when list_tasks reports the task finalized AND
+task_info reports its test split opened in this machine's test registry, the condition the refusal checks, so it can
+never start a real session) -> start_session(budget 10, phases level1, dry_run: the agent plans on Bedrock and stops
+at its first launch, nothing trains) -> wait_job, polled a few times -> list_sessions / show_tree in the sandbox
+workspace. A step that needs something this machine lacks (the task's data cache, model files, Bedrock credentials,
+a finalized task) prints one "skip:" or "error:" line and the demo goes on; --skip-session leaves out the dry-run
+session steps (no Bedrock call).
 
 The server reads GOTRAIN_WORKSPACE (the results; default the repo's workspace/) and runs what it starts in its
 sandbox workspace GOTRAIN_MCP_WORKSPACE (default .sandbox/mcp/workspace). This client never sets GOTRAIN_MCP_OPERATOR:
@@ -35,10 +39,11 @@ _IDS = itertools.count(1)
 
 
 def gotrain_client(env: dict | None = None, errlog=None) -> MCPClient:
-    """A Strands MCPClient for GoTrain's server over stdio (env: the server's environment, default os.environ;
-    errlog: an open file for the server's stderr, default this process's stderr)."""
-    params = StdioServerParameters(command=sys.executable, args=["-m", "gotrain.mcp_server"], cwd=str(REPO),
-                                   env=dict(os.environ if env is None else env))
+    """A Strands MCPClient for GoTrain's server over stdio, always in default mode (env: the server's environment,
+    default os.environ, with GOTRAIN_MCP_OPERATOR removed; errlog: an open file for the server's stderr, default this
+    process's stderr)."""
+    env = {k: v for k, v in (os.environ if env is None else env).items() if k != "GOTRAIN_MCP_OPERATOR"}
+    params = StdioServerParameters(command=sys.executable, args=["-m", "gotrain.mcp_server"], cwd=str(REPO), env=env)
     return MCPClient(lambda: stdio_client(params, errlog=errlog or sys.stderr))
 
 
@@ -85,19 +90,19 @@ def _hint(err: str) -> str:
 
 # --------------------------------------------------------------------------- demo steps
 
-def _tasks(client: MCPClient, task: str) -> bool:
+def _tasks(client: MCPClient, task: str) -> list[dict] | None:
     _step(1, "list_tasks")
     text, _ = call(client, "list_tasks")
     rows = _loads(text)
     if not isinstance(rows, list):
         _say(text, wrap=True)
-        return False
+        return None
     for t in rows:
         _say(f"{t['task']:<16} {t['type']:<15} {len(t['bands'] or []):>2} bands   production "
              f"{t['production_model'] or '-':<20}{'finalized' if t['finalized'] else ''}")
     if task not in {t["task"] for t in rows}:
         _say(f"note: {task} is not a trainable task here")
-    return True
+    return rows
 
 
 def _card(client: MCPClient, task: str) -> None:
@@ -133,8 +138,40 @@ def _predict(client: MCPClient, task: str) -> None:
     _say(f"overlay {r.get('overlay_png_path')} ({images} image returned)")
 
 
+def _refused(client: MCPClient, task: str, rows: list[dict]) -> None:
+    """start_session (not a dry run) on a finalized task: refused by the server before any job or GPU check. Asked only
+    when list_tasks (the vault) and task_info (the machine-wide test registry, the refusal's own check) both report
+    the task finalized: otherwise the server would start a real session, so the step is skipped."""
+    done = sorted((t["task"] for t in rows if t.get("finalized")), key=lambda t: t != task)  # the demo task first
+    if not done:
+        _step(4, "start_session on a finalized task: skipped (list_tasks reports no finalized task)")
+        return
+    def opened(t: str) -> bool:  # the machine-wide test registry, as the server's refusal reads it
+        info = _loads(call(client, "task_info", {"task": t})[0])
+        return isinstance(info, dict) and info.get("test_split_opened_machine_wide") is True
+
+    pick = next((t for t in done if opened(t)), None)
+    if pick is None:
+        _step(4, "start_session on a finalized task: skipped")
+        _say(f"skip: {', '.join(done)} finalized in this workspace's vault, but this machine's test registry has not "
+             f"opened their test split: the server would start a real session, so the demo does not ask", wrap=True)
+        return
+    _step(4, f"start_session(task={pick!r}, budget=10)  not a dry run, on a finalized task")
+    text, _ = call(client, "start_session", {"task": pick, "budget": 10})
+    job = _loads(text)
+    if isinstance(job, dict) and job.get("job_id"):  # never expected: stop it at once
+        out = _loads(call(client, "cancel_job", {"job_id": job["job_id"],
+                                                  "reason": "gopilot demo: a refusal was expected"})[0])
+        status = out.get("status") if isinstance(out, dict) else "unknown (cancel_job failed)"
+        _say(f"error: job {job['job_id']} started instead of being refused; cancel_job: {status}", wrap=True)
+        return
+    _say(text, wrap=True)
+    if "already finalized" in text:
+        _say("(refused before any job started: no job record, no GPU use)")
+
+
 def _session(client: MCPClient, task: str) -> dict | None:
-    _step(4, f"start_session(task={task!r}, budget=10, phases='level1', dry_run=True)  arm dev, sandbox")
+    _step(5, f"start_session(task={task!r}, budget=10, phases='level1', dry_run=True)  arm dev, sandbox")
     text, _ = call(client, "start_session", {"task": task, "budget": 10, "phases": "level1", "dry_run": True})
     job = _loads(text)
     if not isinstance(job, dict):
@@ -146,7 +183,7 @@ def _session(client: MCPClient, task: str) -> dict | None:
 
 
 def _wait(client: MCPClient, job_id: str) -> None:
-    _step(5, f"wait_job(job_id={job_id!r}, timeout_s={POLL_S})  up to {POLLS} polls")
+    _step(6, f"wait_job(job_id={job_id!r}, timeout_s={POLL_S})  up to {POLLS} polls")
     job = None
     for i in range(1, POLLS + 1):
         text, _ = call(client, "wait_job", {"job_id": job_id, "timeout_s": POLL_S}, read_timeout_s=POLL_S + 120)
@@ -168,7 +205,7 @@ def _wait(client: MCPClient, job_id: str) -> None:
 
 
 def _sandbox(client: MCPClient, task: str, session_id: str | None) -> None:
-    _step(6, f"list_sessions(task={task!r}, workspace='sandbox') + show_tree")
+    _step(7, f"list_sessions(task={task!r}, workspace='sandbox') + show_tree")
     text, _ = call(client, "list_sessions", {"task": task, "workspace": "sandbox"})
     rows = _loads(text)
     if not isinstance(rows, list):
@@ -195,15 +232,18 @@ def _sandbox(client: MCPClient, task: str, session_id: str | None) -> None:
 
 
 def demo(client: MCPClient, task: str, skip_session: bool) -> int:
-    """list_tasks -> get_model_card -> predict -> start_session (dry run) -> wait_job -> list_sessions / show_tree."""
-    if not _tasks(client, task):
+    """list_tasks -> get_model_card -> predict -> start_session refused on a finalized task -> start_session (dry run)
+    -> wait_job -> list_sessions / show_tree."""
+    rows = _tasks(client, task)
+    if rows is None:
         return 1
     _card(client, task)
     _predict(client, task)
+    _refused(client, task, rows)
     session_id = None
     if skip_session:
-        _step(4, "start_session: skipped (--skip-session)")
-        _step(5, "wait_job: skipped (--skip-session)")
+        _step(5, "start_session: skipped (--skip-session)")
+        _step(6, "wait_job: skipped (--skip-session)")
     else:
         job = _session(client, task)
         if job is not None:
@@ -230,9 +270,12 @@ def _run(args, errlog, log_path: Path | None) -> int:
 
             from gotrain.agent import MODEL_ID, REGION
 
-            agent = Agent(model=BedrockModel(model_id=MODEL_ID, region_name=REGION), tools=tools,
+            read_only = [t for t in tools  # the agent only reads: it can never start a job or a GPU run
+                         if getattr(getattr(t.mcp_tool, "annotations", None), "readOnlyHint", False)
+                         and t.tool_name not in ("predict", "wait_job", "cancel_job")]
+            agent = Agent(model=BedrockModel(model_id=MODEL_ID, region_name=REGION), tools=read_only,
                           system_prompt="You answer questions about GoTrain's tasks, models, runs and lessons with "
-                                        "its MCP tools. Work you start runs in the sandbox workspace.")
+                                        "its read-only MCP tools.")
             print(agent(args.ask))
         return rc
 
@@ -242,7 +285,8 @@ def main() -> int:
     ap.add_argument("--demo", action="store_true", help="the end-to-end demo (the default without --ask)")
     ap.add_argument("--task", default="m-eurosat")
     ap.add_argument("--skip-session", action="store_true", help="demo without the dry-run session (no Bedrock)")
-    ap.add_argument("--ask", help="a question for a Strands agent that uses GoTrain's tools (calls Bedrock)")
+    ap.add_argument("--ask", help="a question for a Strands agent that uses GoTrain's read-only tools (calls "
+                                  "Bedrock)")
     ap.add_argument("--server-log", help="file for the server's stderr (default <sandbox workspace>/"
                                          "gopilot_server.log; '-' = this terminal)")
     args = ap.parse_args()

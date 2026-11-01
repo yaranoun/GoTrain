@@ -237,7 +237,9 @@ def test_mcp_server_default_mode_has_no_operator_tool_and_serves_a_card(world, t
 def test_gopilot_client_fetches_a_model_card(world, tmp_path):
     env = {k: v for k, v in os.environ.items() if k != "GOTRAIN_MCP_OPERATOR"}
     env["GOTRAIN_MCP_WORKSPACE"] = str(tmp_path / "mcp")  # the client forwards its environment to the server
-    out = subprocess.run([sys.executable, str(REPO / "examples" / "gopilot_client.py"), "--task", "m-eurosat"],
-                         cwd=REPO, capture_output=True, text=True, env=env, timeout=120)
+    # --skip-session: the demo's dry-run session would run gotrain.run (it plans on Bedrock); tests never do
+    out = subprocess.run([sys.executable, str(REPO / "examples" / "gopilot_client.py"), "--task", "m-eurosat",
+                          "--skip-session"], cwd=REPO, capture_output=True, text=True, env=env, timeout=120)
     assert out.returncode == 0, out.stdout + out.stderr
-    assert "get_model_card" in out.stdout and "# Model card: m-eurosat:v1" in out.stdout
+    assert "get_model_card(task='m-eurosat')" in out.stdout and "\n    Model card: m-eurosat:v1 " in out.stdout
+    assert "start_session: skipped (--skip-session)" in out.stdout and not (tmp_path / "mcp" / "jobs").exists()
