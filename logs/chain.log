@@ -686,3 +686,7 @@ scripts/chain.sh: line 48: 179873 Killed                  python -m gotrain.run 
 2026-11-01T06:35:06Z operator: marked 'session m-SA-crop-type main level2,finalize' done by hand (finalize killed by OOM after 'opened'; INC-002; operator decision: SA-crop stays without a test score)
 2026-11-01T06:35:06Z chain start (pid 256418)
 2026-11-01T06:35:06Z start: commit m-SA-crop-type level2 + finalize
+2026-11-01T06:35:07Z committed: chain: m-SA-crop-type level2 + finalize
+2026-11-01T06:35:07Z committed: chain: m-SA-crop-type level2 + finalize
+2026-11-01T06:35:09Z done: commit m-SA-crop-type level2 + finalize
+2026-11-01T06:35:09Z chain: queue complete

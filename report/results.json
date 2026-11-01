@@ -1,0 +1,204 @@
+[
+ {
+  "ci95": {
+   "high": 0.993,
+   "low": 0.978,
+   "n_groups": 1000
+  },
+  "gpu_min": {
+   "P1": 40.81,
+   "P2": 6.3
+  },
+  "incidents": [
+   "INC-001"
+  ],
+  "kind": "composite",
+  "lesson_tests": {
+   "confirm": 0,
+   "inconclusive": 0,
+   "out_of_context": 0,
+   "refute": 0
+  },
+  "lessons_applied": [],
+  "lessons_born": [
+   "L001",
+   "L002"
+  ],
+  "model": "m-eurosat-L2-006",
+  "reference": {
+   "flag": "not comparable: bands differ (3-channel reference, we use 13); benchmark classification v0.8.5 vs our v1.0",
+   "model": "ResNet18-MoCo-S2",
+   "score": 0.98
+  },
+  "session_id": "m-eurosat__main__chain",
+  "task": "m-eurosat",
+  "test": {
+   "metric": "accuracy",
+   "score": 0.986,
+   "vault_entry_hash": "sha256:dfae022ff91b569528b29f55e3abafde495488890260aa8a0690c8fb283f8581"
+  },
+  "tokens": 208496,
+  "val": {
+   "metric": "accuracy",
+   "score": 0.989,
+   "source": "val_stats.npz"
+  }
+ },
+ {
+  "ci95": {
+   "high": 0.992992992992993,
+   "low": 0.977977977977978,
+   "n_groups": 999
+  },
+  "gpu_min": {
+   "P1": 40.76,
+   "P2": 6.16
+  },
+  "incidents": [],
+  "kind": "composite",
+  "lesson_tests": {
+   "confirm": 0,
+   "inconclusive": 2,
+   "out_of_context": 0,
+   "refute": 0
+  },
+  "lessons_applied": [],
+  "lessons_born": [],
+  "model": "m-brick-kiln-L2-004",
+  "reference": {
+   "flag": "not comparable: bands differ (3-channel reference, we use 10); benchmark classification v0.8.5 vs our v1.0",
+   "model": "ConvNeXt-B-timm",
+   "score": 0.9887
+  },
+  "session_id": "m-brick-kiln__main__chain",
+  "task": "m-brick-kiln",
+  "test": {
+   "metric": "accuracy",
+   "score": 0.985985985985986,
+   "vault_entry_hash": "sha256:7006508d26da41387a31161886d6fb9071faf2bcf5084ec1f0e9a3468df2e3a6"
+  },
+  "tokens": 188252,
+  "val": {
+   "metric": "accuracy",
+   "score": 0.992992992992993,
+   "source": "val_stats.npz"
+  }
+ },
+ {
+  "ci95": {
+   "high": 0.9578847812348075,
+   "low": 0.9418462244187508,
+   "n_groups": 403
+  },
+  "gpu_min": {
+   "P1": 40.74,
+   "P2": 7.49
+  },
+  "incidents": [],
+  "kind": "composite",
+  "lesson_tests": {
+   "confirm": 0,
+   "inconclusive": 0,
+   "out_of_context": 0,
+   "refute": 0
+  },
+  "lessons_applied": [],
+  "lessons_born": [
+   "L003",
+   "L004"
+  ],
+  "model": "m-pv4ger-seg-L2-002",
+  "reference": {
+   "flag": "roughly comparable: benchmark segmentation v0.4 vs our v1.0",
+   "model": "ResNet18-U-Net-timm",
+   "score": 0.9408
+  },
+  "session_id": "m-pv4ger-seg__main__chain",
+  "task": "m-pv4ger-seg",
+  "test": {
+   "metric": "miou",
+   "score": 0.950462973882965,
+   "vault_entry_hash": "sha256:4a0e96f8e5d0afa63670215686ea608899a98e12eadd1a9e015839e005be9d63"
+  },
+  "tokens": 188292,
+  "val": {
+   "metric": "miou",
+   "score": 0.9555679155776691,
+   "source": "val_stats.npz"
+  }
+ },
+ {
+  "ci95": {
+   "high": 0.8755233074712301,
+   "low": 0.8708525101381674,
+   "n_groups": 2
+  },
+  "gpu_min": {
+   "P1": 40.59,
+   "P2": 7.15
+  },
+  "incidents": [],
+  "kind": "composite",
+  "lesson_tests": {
+   "confirm": 1,
+   "inconclusive": 1,
+   "out_of_context": 0,
+   "refute": 0
+  },
+  "lessons_applied": [],
+  "lessons_born": [
+   "L005"
+  ],
+  "model": "m-cashew-plant-L2-004",
+  "reference": {
+   "flag": "not comparable: bands differ (3-channel reference, we use 12); benchmark segmentation v0.4 vs our v1.0; class 0 ('no data') ignored by us, counted by the reference",
+   "model": "ResNet50-U-Net-timm",
+   "score": 0.4873
+  },
+  "session_id": "m-cashew-plant__main__chain",
+  "task": "m-cashew-plant",
+  "test": {
+   "metric": "miou",
+   "score": 0.8729064138181061,
+   "vault_entry_hash": "sha256:23f94b115fbddb467aa1f00f7c216b1330c0038607b4c071e24c49feb61e2e57"
+  },
+  "tokens": 203781,
+  "val": {
+   "metric": "miou",
+   "score": 0.8729061280913747,
+   "source": "val_stats.npz"
+  }
+ },
+ {
+  "ci95": null,
+  "gpu_min": {
+   "P1": 39.74,
+   "P2": 8.64
+  },
+  "incidents": [
+   "INC-002"
+  ],
+  "kind": null,
+  "lesson_tests": {
+   "confirm": 0,
+   "inconclusive": 4,
+   "out_of_context": 0,
+   "refute": 0
+  },
+  "lessons_applied": [
+   "L001"
+  ],
+  "lessons_born": [],
+  "model": null,
+  "reference": {
+   "flag": "not comparable: bands differ (3-channel reference, we use 12); benchmark segmentation v0.4 vs our v1.0; class 0 ('no data') ignored by us, counted by the reference",
+   "model": "ResNet101 DeepLabV3-timm",
+   "score": 0.3041
+  },
+  "session_id": "m-SA-crop-type__main__chain",
+  "task": "m-SA-crop-type",
+  "test": null,
+  "tokens": 199328,
+  "val": null
+ }
+]

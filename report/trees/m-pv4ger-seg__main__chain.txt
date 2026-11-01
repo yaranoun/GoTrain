@@ -1,0 +1,13 @@
+- m-pv4ger-seg-0002 [train, first] resnet34/imagenet lr 0.0005: val 0.9510
+  - m-pv4ger-seg-0003 [seed_repeat, seed_repeat] resnet34/imagenet lr 0.0005: val 0.9508
+  - m-pv4ger-seg-0004 [train, within_noise] resnet34/imagenet lr 0.0005: val 0.9518
+    - m-pv4ger-seg-0005 [train, within_noise] resnet18/imagenet lr 0.0005: val 0.9505
+      - m-pv4ger-seg-L2-003 [level2, level2] tta of m-pv4ger-seg-0005: val 0.9531
+    - m-pv4ger-seg-0006 [train, within_noise] resnet34/imagenet lr 0.0005: val 0.9502
+    - m-pv4ger-seg-0007 [train, within_noise] resnet34/imagenet lr 0.001: val 0.9494
+    - m-pv4ger-seg-0008 [train, within_noise] resnet50/imagenet lr 0.0005: val 0.9497
+    - m-pv4ger-seg-L2-001 [level2, level2] tta of m-pv4ger-seg-0004: val 0.9552
+    - m-pv4ger-seg-0012 [level2, level2] resnet34/imagenet lr 0.0005: val 0.9506
+    - m-pv4ger-seg-L2-004 [level2, level2] ensemble of m-pv4ger-seg-0004, m-pv4ger-seg-0002, m-pv4ger-seg-0005: val 0.9556
+    - m-pv4ger-seg-L2-006 [level2, level2] ensemble of m-pv4ger-seg-0004, m-pv4ger-seg-0002, m-pv4ger-seg-0005, m-pv4ger-seg-0012: val 0.9546
+  - m-pv4ger-seg-L2-002 [level2, level2] tta of m-pv4ger-seg-0002: val 0.9556

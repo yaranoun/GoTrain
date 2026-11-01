@@ -1,0 +1,13 @@
+- m-SA-crop-type-0001 [train, first] resnet18/ssl4eo_moco lr 0.0005: val 0.3820
+  - m-SA-crop-type-0002 [seed_repeat, seed_repeat] resnet18/ssl4eo_moco lr 0.0005: val 0.3326
+  - m-SA-crop-type-0003 [train, within_noise] resnet34/imagenet lr 0.0005: val 0.3587
+  - m-SA-crop-type-0004 [train, within_noise] resnet18/ssl4eo_moco lr 0.0005: val 0.3722
+  - m-SA-crop-type-0005 [train, within_noise] resnet18/ssl4eo_moco lr 0.001: val 0.3411
+  - m-SA-crop-type-0006 [train, within_noise] resnet18/ssl4eo_moco lr 0.0003: val 0.3866
+    - m-SA-crop-type-0007 [train, within_noise] resnet18/ssl4eo_moco lr 0.0003: val 0.4023
+      - m-SA-crop-type-L2-001 [level2, level2] tta of m-SA-crop-type-0007: val 0.4094
+      - m-SA-crop-type-0012 [level2, level2] resnet18/ssl4eo_moco lr 0.0003: val 0.4002
+      - m-SA-crop-type-L2-004 [level2, level2] ensemble of m-SA-crop-type-0007, m-SA-crop-type-0006, m-SA-crop-type-0001: val 0.4105
+      - m-SA-crop-type-L2-006 [level2, level2] ensemble of m-SA-crop-type-0007, m-SA-crop-type-0006, m-SA-crop-type-0001, m-SA-crop-type-0012: val 0.4145
+    - m-SA-crop-type-L2-002 [level2, level2] tta of m-SA-crop-type-0006: val 0.3971
+  - m-SA-crop-type-L2-003 [level2, level2] tta of m-SA-crop-type-0001: val 0.3891
