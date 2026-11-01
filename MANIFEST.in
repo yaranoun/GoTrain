@@ -1,0 +1,6 @@
+# The sdist holds the package, README, LICENSE and pyproject.toml only (scripts/check_dist.py audits it).
+# setuptools adds tests/test*.py by default; the suite needs its fixtures and a checkout, so it stays in git.
+prune tests
+prune workspace
+prune .sandbox
+global-exclude *.py[cod] __pycache__ *.npz *.npy *.pt *.pth *.ckpt *.h5 *.hdf5 *.zip *.jsonl *.log .env*

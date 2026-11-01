@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,7 +7,22 @@ name = "gotrain"
 version = "1.0.0"
 description = "An agent that trains Earth-observation models on GEO-Bench tasks on its own, served over MCP"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
+keywords = ["mcp", "model-context-protocol", "geospatial", "earth-observation", "remote-sensing", "sentinel-2",
+            "geo-bench", "automl", "agent"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: GIS",
+    "Topic :: Scientific/Engineering :: Image Recognition",
+]
 dependencies = [
     "geobench",
     "h5py",
@@ -27,8 +42,10 @@ dependencies = [
 ]
 
 [project.urls]
+Homepage = "https://github.com/yaranoun/GoTrain"
 Repository = "https://github.com/yaranoun/GoTrain"
 Documentation = "https://github.com/yaranoun/GoTrain/blob/main/docs/MCP.md"
+Issues = "https://github.com/yaranoun/GoTrain/issues"
 
 [project.scripts]
 gotrain-mcp = "gotrain.mcp_cli:main"
