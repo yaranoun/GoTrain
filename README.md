@@ -761,7 +761,7 @@ and the text `error: <Type>: <message>`.
 
 </details>
 
-**5. Ask for things.** Example requests and the tools they map to:
+**5. Ask for things.** Example requests and the tools they map to. Training requests work on any machine whose test registry has not finalized that task; on the build machine every trainable task is finalized, so they are refused there by design.
 
 | Request | Tools |
 |---|---|
