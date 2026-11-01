@@ -1,3 +1,5 @@
+> Build record from the hackathon (31 Oct – 1 Nov 2026), kept verbatim for traceability; not needed to use GoTrain. Start at [README.md](../README.md).
+
 > **Technical appendix: long-form specification.** Produced by a multi-step research, drafting and review process on 31 Oct and checked against `origin/main` @ `a17d129`.
 > **The main plan (`docs/CREATIVE_PLAN.md`) takes precedence on every conflict.** This appendix is here for detail: formulas, edge cases, disk budget, verified facts.
 > **Superseded since it was written:** Step 4 has landed (`7d8c160`/`82b8860`, sandbox dry run kept as evidence), so the "act now before Step 4" items in section 0 are partly outdated. Machinery here that the main plan does not require is optional: the two-builder split, the F2/F3 freezes, `harness_hash`, `LOCK_AB`, the quiet-instance rule, the calibrator and the extended retrain.

@@ -1,13 +1,15 @@
 # GoTrain
 
+[![PyPI](https://img.shields.io/pypi/v/gotrain)](https://pypi.org/project/gotrain/) [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue)](https://pypi.org/project/gotrain/) [![tests](https://github.com/yaranoun/GoTrain/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/yaranoun/GoTrain/actions/workflows/tests.yml) [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/yaranoun/GoTrain/blob/main/LICENSE)
+
 **Every dataset makes the next one easier.**
 
 ```bash
 pip install gotrain
-# or from GitHub: pip install "git+https://github.com/yaranoun/GoTrain.git@cdfd3cff91f321d77956129dd9212fe571069bb6"
+# or from GitHub: pip install "git+https://github.com/yaranoun/GoTrain.git@v1.0.0"
 gotrain download m-eurosat
 gotrain train m-eurosat --budget 10   # the agent trains a model on its own (budget in GPU minutes)
-gotrain mcp                           # or let GoPilot / any MCP client drive GoTrain
+gotrain mcp                           # MCP server for any MCP client (designed to plug into GoPilot)
 ```
 
 Requires Linux and Python ≥ 3.12; `train` also needs an NVIDIA GPU and AWS credentials with Amazon Bedrock access
@@ -22,6 +24,22 @@ re-tested, and then confirmed, narrowed or refuted.
 Built for the AUB ACM × RASID GoTrain hackathon (31 Oct – 1 Nov 2026). One agent and one dataset-agnostic system
 prompt; Claude on Amazon Bedrock with Strands, on a SageMaker GPU instance.
 
+## The brief at a glance
+
+| Brief | GoTrain |
+|---|---|
+| 2 classification problems | `m-eurosat` (land cover, 10 classes) and `m-brick-kiln` (brick kiln yes/no). Metric: accuracy |
+| 2 segmentation problems | `m-pv4ger-seg` (solar panels) and `m-cashew-plant` (cashew plantations; class 0 "no data" ignored). Metric: mIoU |
+| "Don't limit yourself to 4 datasets" | a 5th, `m-SA-crop-type` (crop types; mIoU, class 0 ignored), held out for the with/without-playbook test on validation; no test score (INC-002) |
+| "The test split is touched once" | once per dataset, machine-wide, enforced in code; the agent only ever sees the vault hash ([Rules](#rules)) |
+| "Keep your agent's logs" | every transcript, run tree and training log is committed ([Logs behind each score](#logs-behind-each-score)) |
+| Extra points: store and model versions | a versioned model registry with model cards, and an artifact store on the file system, S3-ready ([Plug into GoPilot](#plug-into-gopilot)) |
+
+Judging criteria and where to look: approach and training workflow ([How it works](#how-it-works),
+[with vs without the playbook](#results)) · test scores and logs ([Results](#results),
+[Trace a score](#trace-a-score)) · GoPilot ([Plug into GoPilot](#plug-into-gopilot)). Criterion by criterion:
+[docs/DELIVERABLES.md](https://github.com/yaranoun/GoTrain/blob/main/docs/DELIVERABLES.md).
+
 ## How it works
 
 | Level | Scope | What learns | Mechanism |
@@ -33,16 +51,19 @@ prompt; Claude on Amazon Bedrock with Strands, on a SageMaker GPU instance.
 The agent decides what to try and writes hypotheses, diagnoses and lesson statements. **Code** enforces the budget,
 measures noise (a grouped paired bootstrap plus seed noise from a harness-launched repeat), keeps the ledger, picks
 the incumbent, scores lessons, and decides which model is tested. The test split is opened **once per dataset,
-machine-wide**, by code. The agent only ever sees the vault hash, never a test score.
+machine-wide**, by code (the machine-wide guard was added after INC-001, disclosed below). The agent only ever sees
+the vault hash, never a test score.
+
+![Lesson flow: where each lesson was born, applied, confirmed or left inconclusive across the five datasets](https://raw.githubusercontent.com/yaranoun/GoTrain/main/report/lesson_flow.png)
 
 ## Results
-
-> **Submission tags.** `submission` points at the final `main`: it was last moved on 1 Nov 2026 (~08:50 UTC) after gotrain 1.0.0 went live on PyPI (README and docs/MCP.md install with `pip install gotrain`). Earlier submission heads are kept: `submission-v1` (215f259, the GPU chain results) and `submission-v2` (c480ea1, plus the `gotrain` CLI, the 1.0.0 packaging and the README Quickstart). The results are identical in all three: they come from the GPU chain merged at 5f6fe9c.
 
 > Filled in from `python -m gotrain.report` after the chain (`report/results.md`, `report/dashboard.html`).
 > Each test score comes from a single post-chain `finalize`, with a 95% grouped bootstrap interval computed from
 > that test pass's `test_stats.npz`. Every GEO-Bench comparison carries a protocol flag (bands, benchmark
 > version, class-0 handling): the published references all use 3-channel input on older benchmark versions.
+
+Val and Test are accuracy for classification (shown as %) and mIoU for segmentation (shown as 0–1).
 
 <!-- results:begin (written by python -m gotrain.report --readme; do not edit by hand) -->
 
@@ -63,6 +84,8 @@ With vs without the playbook (`experiments/playbook-ab/analyze.py`; n = 1, val o
 **With vs without the playbook** on a held-out dataset (`experiments/playbook-ab/PROTOCOL.md`, written before it
 ran): one paired run, reported with ±2σ bands, whatever the result.
 
+![With vs without the playbook on m-SA-crop-type: best val mIoU against GPU minutes, with ±2σ bands](https://raw.githubusercontent.com/yaranoun/GoTrain/main/report/ab_m-SA-crop-type.png)
+
 **Disclosed incident (INC-001).** On 31 Oct, while hand-checking the Step 3 tools, a notebook passed a killed
 5-epoch tool-check run (`m-eurosat-0005`) to `finalize`, and the m-eurosat test split was evaluated once (test
 accuracy 0.895). No model, config or decision was chosen with it. The vault entry was voided
@@ -80,21 +103,37 @@ us (`workspace/vault_incidents.jsonl`). Its with/without-playbook result uses th
 protocol, so it is unaffected.
 
 **How to read the results.**
-- With vs without the playbook: the ON arm started 3.7 points higher (first run, from the playbook's confirmed SSL4EO
-  lesson) and stayed ahead on the pre-registered primary metric (+0.007 AUC). The OFF arm found the same weights by
-  its third run and ended 0.4 points higher. Every difference is inside 2σ (σ_AB ≈ 0.05): one paired run suggests,
-  it does not prove.
-- m-cashew-plant's test split is 50 images from only 2 locations, so its 95% interval is not meaningful. Its
-  400-image validation split is the steadier signal.
+- With vs without the playbook: the ON arm started 3.7 points higher (first run, from the playbook's SSL4EO lesson
+  L001: status hypothesis, one confirming re-test on m-cashew-plant at z = +2.08) and stayed ahead on the
+  pre-registered primary metric (+0.007 AUC). The OFF arm found the same weights by its third run and ended 0.4
+  points higher. Every difference is inside 2σ (σ_AB ≈ 0.05): one paired run suggests, it does not prove. The ON arm
+  read the frozen snapshot `experiments/playbook-ab/playbook-snapshot.jsonl` (sha256 `a39fdb49…89107eb`, logged in
+  `logs/chain.log` and in the ON session's header in `workspace/sessions.jsonl`).
+- m-cashew-plant's val and test mIoU agree to six decimals by coincidence, not leakage: val 0.8729061 (400 images
+  from 16 locations, `val_stats.npz`, ledger row written 31 Oct 22:45:55 UTC) and test 0.8729064 (50 images from 2
+  other locations, `test_stats.npz`; the test split was first opened at 22:52:17 UTC). The splits share no image and
+  no location, the two stats files have different hashes, and the per-class IoUs differ by up to 0.05 (test: the
+  vault's `per_class_iou`; val: `workspace/runs/m-cashew-plant/m-cashew-plant-L2-004/val_stats.npz`).
+  `python -m gotrain.trace m-cashew-plant` re-scores the test number from `test_stats.npz`. With only 2 test
+  locations its 95% interval is not meaningful; the 400-image validation split is the steadier signal.
+- m-eurosat and m-brick-kiln show the same test cell because each made 14 test errors (986/1000 and 985/999): both
+  round to 98.60% with the same interval.
+- m-SA-crop-type, the 5th dataset: code chose the Level 2 ensemble `m-SA-crop-type-L2-006` (val mIoU 0.4145,
+  `report/level2.md`); its one test evaluation is the one INC-002 killed, so it has no test score.
 - Operational note: at 00:16 UTC a finished training process crashed at exit and held the GPU lock while writing a
   core dump. The chain paused itself; the process was stopped and a reaper was added (`logs/reaper.log`). No result
   was affected.
+
+> **Submission.** The tag `submission` marks the submitted `main`. Earlier heads are kept: `submission-v1` (215f259,
+> the GPU chain results), `submission-v2` (c480ea1, plus the `gotrain` CLI and the 1.0.0 packaging) and
+> `submission-v3` (25db46c, after gotrain 1.0.0 went live on PyPI). The results are identical in all of them: they
+> come from the GPU chain merged at 5f6fe9c.
 
 ## From source
 
 ```bash
 git clone https://github.com/yaranoun/GoTrain.git && cd GoTrain
-pip install -r requirements.txt
+pip install -e . pytest                         # same install as CI; adds the gotrain / gotrain-mcp commands
 python -m gotrain.engine.download m-eurosat
 python -m pytest -q tests/                      # CPU gates on synthetic data; never a real test split
 
@@ -106,27 +145,52 @@ scripts/chain.sh init <B> && nohup scripts/chain.sh run > /dev/null 2>&1 &
 
 # report, verify
 python -m gotrain.report --out report/
-python -m gotrain.verify --full
+python -m gotrain.verify --full                 # on a clone: artifact_hashes flags the gitignored member checkpoints (see Trace a score)
 python -m gotrain.verify --session <session_id>
 ```
 
 ## Trace a score
 
+### Logs behind each score
+
+For each task (`<task>` = m-eurosat, m-brick-kiln, m-pv4ger-seg, m-cashew-plant, m-SA-crop-type):
+- Agent transcripts, one per phase: `workspace/agent_logs/<task>__main__chain.{level1,reflect,finalize}.md`
+  (+ `.jsonl`). m-SA-crop-type's finalize transcript is `.jsonl` only and stops at the finalize call (INC-002).
+- Run tree: `report/trees/<task>__main__chain.png` (+ `.txt`).
+- Level 2, which built every tested model, is run by code (no LLM, so no transcript): `report/level2.md` lists every
+  composite with its val score and whether it was promoted, and the `[level2]` lines in `logs/chain.log` show each
+  noise-gate decision.
+- Training log of each trained run: `logs/<run_id>.log` (composites train nothing, so they have none).
+- Model card, written by code: `workspace/model_cards/<task>.md` (none for m-SA-crop-type).
+- One command: `python -m gotrain.trace <task>` (also `examples/trace_a_score.py` and the MCP tool `trace_score`)
+  walks from the vault entry to the ledger row and the agent's `launch_training` call, checking each hash (on a
+  clone, see step 2 for the checkpoint lines).
+- The OFF arm of the with/without-playbook test keeps its own logs and workspace under
+  `experiments/playbook-ab/m-SA-crop-type/off/`.
+
+Run ids are numbered from the task's ledger row count, which also counts Level 2 composites, so the numbers have
+gaps.
+
 Every number in the report follows one chain, and `python -m gotrain.verify` re-derives it:
 
-1. **Report:** `report/results.md` shows a test score and its vault entry hash. The finalized model is chosen by
-   code (the session's latest promoted Level 2 composite, else the incumbent); the agent's message in the finalize
-   transcript is narration, not the decision.
+1. **Report:** `report/results.md` shows a test score; `report/results.json` (`test.vault_entry_hash`) and the
+   model card give its vault entry hash. The finalized model is chosen by code (the session's latest promoted
+   Level 2 composite, else the incumbent); the agent's message in the finalize transcript is narration, not the
+   decision.
 2. **Vault:** `workspace/vault.jsonl` is hash-chained, one entry per dataset, with the model's checkpoint hash
    (and member hashes for an ensemble) and the `test_stats.npz` hash. `verify --full` recomputes the chain and
-   every hash.
+   every hash. Checkpoints (`*.pt`) are not in git, so on a fresh clone `verify --full` exits 1 with
+   `artifact_hashes` listing the ensemble members' `checkpoint.pt` as missing, and `python -m gotrain.trace` marks
+   the same lines ✗. Everything else is checked from the clone: the vault hash chain, each `composite.json` and
+   `test_stats.npz` against its vault hash, the registry, the lessons and the git freezes. On the build machine,
+   where the checkpoints are, `verify --full` passes all 8 checks (see the `submission` tag message).
 3. **Model card:** `python -m gotrain.model_card <task>` is written entirely by code: config, lineage, val and
    test scores, interval, GEO-Bench reference with its flag, and incidents.
 4. **Ledger:** `workspace/ledger.jsonl` holds one row per run: session, arm, launcher, parent, knob change,
    recipe hash, outcome with its noise (delta, sigma, z) and the incumbent at that moment. `verify --session`
-   replays the noise gate and the pots.
-5. **Transcript:** `workspace/agent_logs/<session>.<phase>.jsonl` (+ `.md`). Each agent launch matches exactly
-   one `launch_training` call with the same hypothesis and config.
+   replays the noise gate and the pots. Its recorded output for all 6 sessions is in `logs/chain.log`.
+5. **Transcript:** `workspace/agent_logs/<session>.<phase>.jsonl` (+ `.md`; the submitted sessions are listed
+   above). Each agent launch matches exactly one `launch_training` call with the same hypothesis and config.
 6. **Session header:** `workspace/sessions.jsonl` records the code tree hash, prompt hash, playbook hash, model
    id, library versions, budget, and the opening (lessons applied and re-tested).
 7. **Playbook:** `workspace/playbook.jsonl` lists every lesson with its evidence runs, tests, status and
@@ -134,36 +198,39 @@ Every number in the report follows one chain, and `python -m gotrain.verify` re-
 
 ## Plug into GoPilot
 
-GoTrain is an MCP server, and the server is the whole product surface: a client (GoPilot, Claude Desktop, Claude
-Code, the MCP Inspector or a Strands agent) does everything with tool calls. Full guide:
-[docs/MCP.md](https://github.com/yaranoun/GoTrain/blob/main/docs/MCP.md).
+GoTrain is an MCP server designed to plug into GoPilot via MCP, and the server is the whole product surface: an
+MCP client (Claude Desktop, Claude Code, the MCP Inspector or a Strands agent) does everything with tool calls.
+`examples/gopilot_client.py`, a Strands `MCPClient`, plays GoPilot's role, and the test suite drives the server with
+a plain MCP stdio client. Full guide: [docs/MCP.md](https://github.com/yaranoun/GoTrain/blob/main/docs/MCP.md).
 
 ```bash
 gotrain mcp --check                               # resolved folders + tool count, exit 0 if usable
-gotrain mcp                                       # stdio server (GoPilot / Claude Desktop start this)
+gotrain mcp                                       # stdio server (what an MCP client such as Claude Desktop launches)
 gotrain mcp --http                                # streamable HTTP at http://127.0.0.1:8765/mcp
-# from a source checkout: the example GoPilot client (Strands MCPClient)
+# from a source checkout: an example client in GoPilot's role (Strands MCPClient)
 python examples/gopilot_client.py --task m-eurosat
 python examples/gopilot_client.py --ask "Which models are in production, and how good are they?"
 ```
 
 | Mode | Tools | What they do |
 |---|---|---|
-| Default (GoPilot) | 27 | 13 read tools (tasks, models, model cards, playbook, runs, sessions, run trees, compare, report, `trace_score`, `verify`); 5 background jobs in a sandbox workspace (`download_task`, `build_cache`, `start_session`, `launch_run`, `evaluate_run`) with 5 job controls; `predict`, `build_report`, `store_doctor`, `store_pull` |
+| Default (meant for GoPilot) | 27 | 13 read tools (tasks, models, model cards, playbook, runs, sessions, run trees, compare, report, `trace_score`, `verify`); 5 background jobs in a sandbox workspace (`download_task`, `build_cache`, `start_session`, `launch_run`, `evaluate_run`) with 5 job controls; `predict`, `build_report`, `store_doctor`, `store_pull` |
 | Operator (`GOTRAIN_MCP_OPERATOR=1`, source checkout only) | 32 | the 27, plus `finalize` (each task's one test evaluation), `registry_sync`, `promote`, `archive`, `store_push` |
 
 The guards live in code under the server, which never works around them. A GPU job is refused while the GPU is
 busy, never queued. A finalized task gets no more training. Test numbers appear only as the vault recorded them, and
 no default-mode tool can reach a test split. What a GoPilot user can do:
-[docs/MCP.md#what-a-gopilot-user-can-do](https://github.com/yaranoun/GoTrain/blob/main/docs/MCP.md#what-a-gopilot-user-can-do). Status: the GPU tools
-(`predict` on CUDA, non-dry `start_session`, `launch_run`, `build_cache`, `evaluate_run`) are tested on CPU and in
-the sandbox only, and `store_push` to S3 waits for an IAM grant.
+[docs/MCP.md#what-a-gopilot-user-can-do](https://github.com/yaranoun/GoTrain/blob/main/docs/MCP.md#what-a-gopilot-user-can-do).
+Per-tool test status (CPU, sandbox, GPU):
+[docs/MCP.md#status](https://github.com/yaranoun/GoTrain/blob/main/docs/MCP.md#status).
 
 Models live in a versioned registry (`python -m gotrain.registry sync | list`, `<task>:vN`, tags candidate /
-production / archived, hashes equal to the vault's), and artifacts go to a local folder or S3
-(`GOTRAIN_STORE=local | s3://<bucket>/<prefix>`; `python -m gotrain.store doctor | push-models`). The S3 code is
-ready, but the instance role lacks `s3:PutObject`, so the local store is used. After the hackathon, GoPilot inherits
-the playbook as its starting point.
+production / archived, hashes equal to the vault's), each with a model card written by code. Datasets and models move
+through an artifact store (`python -m gotrain.store doctor | push-dataset | fetch-dataset | push-models`; MCP
+`store_pull`, operator `store_push`), and every transfer is logged with its sha256. Two backends sit behind one
+interface: a file-system folder (`GOTRAIN_STORE=local`, the default) and S3 (`GOTRAIN_STORE=s3://<bucket>/<prefix>`).
+By the organisers' decision this deployment uses the file-system store; the S3 backend is implemented but was not
+exercised end to end. Inside GoPilot, the playbook would be the starting point for every new dataset.
 
 ## Layout
 
@@ -173,21 +240,28 @@ gotrain/runs.py      experiment operations behind the tools (budget pots, noise-
 gotrain/noise.py     grouped paired bootstrap, seed sigma, incumbent
 gotrain/playbook.py  Level 3: lessons, retrieval, compose, re-tests, status rules
 gotrain/level2.py    Level 2: TTA gate, ensemble, trained slot
+gotrain/agent.py     the Strands agent (Claude Sonnet on Amazon Bedrock), one prompt and tool set per phase
 gotrain/tools/       Strands tools bound to one session (no tool takes a task argument)
 gotrain/prompts/     system prompt + one section per phase (hygiene-tested: no dataset names)
 gotrain/run.py       session driver (arms main / off / dev; phases level1 → reflect → level2 → finalize)
 gotrain/verify.py    session and full verify      gotrain/report.py   results, lesson flow, audit, dashboard
 gotrain/registry.py, model_card.py, store.py, mcp_server.py   production layer
+gotrain/cli.py, mcp_cli.py, mcp_ops.py, jobs.py, predict.py, trace.py   the gotrain / gotrain-mcp commands and
+                     what the MCP tools run
 experiments/playbook-ab/   pre-registered with/without-playbook protocol and analysis
+examples/            example client in GoPilot's role, MCP client configs, trace_a_score.py
 scripts/             chain.sh (GPU queue), geobench_baselines.py, step9_* (dataset checks)
-docs/                CREATIVE_PLAN.md (plan), INTERFACES.md (contract), ledger_and_tools.md (record formats)
+report/              results, Level 2 table, lesson flow, A/B figure, run trees, dashboard
+logs/                chain.log, one training log per run
+docs/                MCP.md (MCP / GoPilot guide), DELIVERABLES.md (criteria and evidence), ledger_and_tools.md
+                     (record formats); PLAN, CREATIVE_PLAN, INTERFACES, SECOND_SESSION (build records)
 workspace/           ledger, sessions, vault, playbook, registry, runs (checkpoints and caches gitignored)
 ```
 
 ## Rules
 
 - Only the validation split guides decisions. The test split is reachable only through `finalize`, once per
-  dataset machine-wide (`$GOTRAIN_STATE_DIR/tested.jsonl`), and code picks the model.
+  dataset machine-wide (since INC-001; `$GOTRAIN_STATE_DIR/tested.jsonl`), and code picks the model.
 - Tool checks and development run in a sandbox (`GOTRAIN_WORKSPACE`), where finalize refuses.
 - Lessons come only from the agent's own measured runs. The playbook is never seeded by hand.
 
