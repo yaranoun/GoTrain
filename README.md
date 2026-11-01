@@ -3,7 +3,8 @@
 **Every dataset makes the next one easier.**
 
 ```bash
-pip install "git+https://github.com/yaranoun/GoTrain.git@cdfd3cff91f321d77956129dd9212fe571069bb6"   # GoTrain 1.0.0
+pip install gotrain
+# or from GitHub: pip install "git+https://github.com/yaranoun/GoTrain.git@cdfd3cff91f321d77956129dd9212fe571069bb6"
 gotrain download m-eurosat
 gotrain train m-eurosat --budget 10   # the agent trains a model on its own (budget in GPU minutes)
 gotrain mcp                           # or let GoPilot / any MCP client drive GoTrain
