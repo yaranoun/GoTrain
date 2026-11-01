@@ -36,9 +36,19 @@ def test_entries_are_consistent():
 
 
 def test_no_tracked_ledger_has_a_held_out_row():
+    """Before the chain: no record of a held-out task anywhere. After the chain was merged into main (1 Nov), held-out
+    records may exist only inside the chain's own sessions (<task>__<arm>__chain), never in a manual or sandbox run."""
     files = subprocess.run(["git", "ls-files", "*.jsonl"], cwd=REPO, capture_output=True, text=True).stdout.split()
     for f in files:
         for line in (REPO / f).read_text().splitlines():
             if line.strip():
                 rec = json.loads(line)
-                assert rec.get("task") not in HELD_OUT, (f, rec.get("run_id") or rec.get("session_id"))
+                if rec.get("task") not in HELD_OUT:
+                    continue
+                if f == "workspace/vault_incidents.jsonl":   # INC-002, the disclosed incident about the chain's test touch
+                    assert rec.get("incident_id"), (f, rec)
+                elif f == "workspace/test_registry.jsonl":   # the chain's own test-split guard record
+                    assert rec.get("checkout") == "/home/sagemaker-user/GoTrain", (f, rec.get("run_id"))
+                else:
+                    sid = rec.get("session_id") or ""
+                    assert sid.endswith("__chain"), (f, rec.get("run_id") or sid)

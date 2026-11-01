@@ -184,9 +184,12 @@ def test_every_run_id_tool_refuses_another_tasks_run():
 
 def test_fresh_session_ignores_rows_without_session_id():
     real = REPO / "workspace" / "ledger.jsonl"
-    for line in real.read_text().splitlines():  # the three m-eurosat tool-check rows (no session_id)
-        rec = json.loads(line)
-        assert rec.get("session_id") is None
+    # the three m-eurosat tool-check rows (no session_id); after the chain was merged into main the real ledger also
+    # holds the chain's rows (with session ids), which are not this test's subject
+    legacy = [json.loads(l) for l in real.read_text().splitlines() if l.strip()]
+    legacy = [r for r in legacy if r.get("session_id") is None]
+    assert {r["run_id"] for r in legacy} >= {"m-eurosat-0003", "m-eurosat-0004", "m-eurosat-0005"}
+    for rec in legacy:
         ledger.append(ledger.LEDGER, {**rec, "run_id": rec["run_id"] + "-copy"})
     b = runs.budget(_session("m-eurosat", sid="fresh-eurosat"))
     assert b["P1"]["used"] == 0 and b["incumbent"] is None and b["runs"] == {}
