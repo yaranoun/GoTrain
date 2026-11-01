@@ -1,5 +1,5 @@
-# Copy to .github/workflows/tests.yml to enable (pushing a workflow file needs a token with the `workflow` scope).
-# CPU test suite (synthetic data only: the gates never touch a test split, a GPU or the network beyond pip).
+# CPU test suite on GitHub Actions: every push (except the GPU chain's run/** results branches) and every pull request.
+# Synthetic data only: the gates never touch a test split, a GPU or the network beyond pip.
 name: tests
 
 on:
