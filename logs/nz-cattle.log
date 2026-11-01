@@ -1,0 +1,96 @@
+Session m-nz-cattle__main__chain · arm main · B 60.0 (R 6.0, P1 45.0, P2 15.0) · workspace /home/sagemaker-user/GoTrain-nz/workspace
+[level1] transcript: /home/sagemaker-user/GoTrain-nz/workspace/agent_logs/m-nz-cattle__main__chain.level1.jsonl
+
+Tool #1: profile_dataset
+
+Tool #2: list_backbones
+
+Tool #3: get_budget
+
+Tool #4: read_playbook
+
+Tool #5: save_profile_notes
+
+Tool #6: compose_config
+
+Tool #7: launch_training
+
+Tool #8: wait_run
+
+Tool #9: compose_config
+
+Tool #10: launch_training
+
+Tool #11: wait_run
+Noise is small (~0.0005). Next, a bigger backbone.
+Tool #12: launch_training
+
+Tool #13: wait_run
+
+Tool #14: launch_training
+
+Tool #15: wait_run
+
+Tool #16: evaluate_run
+
+Tool #17: record_diagnosis
+
+Tool #18: launch_training
+
+Tool #19: wait_run
+
+Tool #20: launch_training
+
+Tool #21: wait_run
+
+Tool #22: launch_training
+
+Tool #23: launch_training
+
+Tool #24: wait_run
+
+Tool #25: get_budget
+The Level 1 pot has 4.2 min left, which can't fit another 6-min decision run. I'm stopping here.
+
+**Result:** none of my changes beat the measured noise, so the incumbent is the default config, m-nz-cattle-0001 (unet, resnet34, imagenet). It scored a validation mIoU of 0.8538.
+
+- **Noise:** the harness's seed repeat scored 0.8544, a difference of about 0.0005.
+- **Backbone size:** resnet50 (0.8537) and resnet18 (0.8533) both landed within noise of the default.
+- **Input size:** upsampling resnet18 to 768 gave 0.8543, also within noise.
+- **Learning rate:** resnet18 at lr 0.001 gave 0.8550, the best score of the session. It is still within noise of the incumbent (z +1.22, and a kept gain needs z ≥ 2).
+- **Decoder:** deeplabv3plus regressed to 0.8505 (z −3.70).
+- **Where the errors are:** cattle IoU is only 0.72, against 0.99 for no cattle. The errors are mostly boundary pixels around very small cattle. About 14% of cattle pixels are missed.
+
+I never launched the two screen runs.[level1] end: 25 tool calls, 42.1 min, tokens {'inputTokens': 117268, 'outputTokens': 3545, 'totalTokens': 219702} (transcript m-nz-cattle__main__chain.level1.md)
+[reflect] transcript: /home/sagemaker-user/GoTrain-nz/workspace/agent_logs/m-nz-cattle__main__chain.reflect.jsonl
+
+Tool #1: get_budget
+
+Tool #2: query_ledger
+
+Tool #3: mine_effects
+
+Tool #4: read_playbook
+
+Tool #5: add_lesson
+
+Tool #6: add_lesson
+
+Tool #7: add_lesson
+I wrote one lesson, L006. The other two usable effects were refused because they had already been recorded against existing lessons.
+
+**Written**
+- **L006 (lead):** Upsampling the input to img_size 768 (unet, resnet18, imagenet) raised val miou by about 0.001 (z +1.1). It added no time cost under the cap. It is a weak lead for tiny-object aerial imagery.
+
+**Left out**
+- **unet → deeplabv3plus (z -4.1):** This pair already tested L004, so the result is recorded there. A new lesson would repeat it.
+- **lr 0.0005 → 0.001 with resnet18 (z +1.9):** This pair already tested L003, so the result is recorded there. The sign differs from L003, which saw a drop with resnet34. I couldn't add a lesson noting the possible backbone interaction.
+- **Backbone swaps among resnet18, resnet34 and resnet50 (|z| ≤ 0.63):** All were within noise, so the code refuses them.
+
+I didn't request any new knobs.[reflect] end: 7 tool calls, 0.2 min, tokens {'inputTokens': 7915, 'outputTokens': 1438, 'totalTokens': 18740} (transcript m-nz-cattle__main__chain.reflect.md)
+[level2] TTA gate m-nz-cattle-0006: z +4.63 -> keep
+[level2] TTA gate m-nz-cattle-0005: z +5.64 -> keep
+[level2] TTA gate m-nz-cattle-0001: z +4.18 -> keep
+[level2] ensemble m-nz-cattle-L2-004: z +5.26 vs m-nz-cattle-L2-003 -> promoted
+[level2] trained slot m-nz-cattle-0012: done
+[level2] ensemble+slot m-nz-cattle-L2-006: z -0.91 vs m-nz-cattle-L2-004 -> kept out

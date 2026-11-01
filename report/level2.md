@@ -30,3 +30,9 @@
 | m-SA-crop-type | m-SA-crop-type-L2-003 | tta | m-SA-crop-type-0001 +TTA | 0.3891 | yes |
 | m-SA-crop-type | m-SA-crop-type-L2-004 | ensemble | m-SA-crop-type-0007 +TTA, m-SA-crop-type-0006 +TTA, m-SA-crop-type-0001 +TTA | 0.4105 | yes |
 | m-SA-crop-type | m-SA-crop-type-L2-006 | ensemble | m-SA-crop-type-0007 +TTA, m-SA-crop-type-0006 +TTA, m-SA-crop-type-0001 +TTA, m-SA-crop-type-0012 | 0.4145 | yes |
+| m-nz-cattle | m-nz-cattle-0012 | trained slot | m-nz-cattle-0006 | 0.8556 | no |
+| m-nz-cattle | m-nz-cattle-L2-001 | tta | m-nz-cattle-0006 +TTA | 0.8579 | no |
+| m-nz-cattle | m-nz-cattle-L2-002 | tta | m-nz-cattle-0005 +TTA | 0.8568 | no |
+| m-nz-cattle | m-nz-cattle-L2-003 | tta | m-nz-cattle-0001 +TTA | 0.8558 | yes |
+| m-nz-cattle | m-nz-cattle-L2-004 | ensemble | m-nz-cattle-0006 +TTA, m-nz-cattle-0005 +TTA, m-nz-cattle-0001 +TTA | 0.8583 | yes |
+| m-nz-cattle | m-nz-cattle-L2-006 | ensemble | m-nz-cattle-0006 +TTA, m-nz-cattle-0005 +TTA, m-nz-cattle-0001 +TTA, m-nz-cattle-0012 | 0.8581 | no |

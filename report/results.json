@@ -200,5 +200,47 @@
   "test": null,
   "tokens": 199328,
   "val": null
+ },
+ {
+  "ci95": {
+   "high": 0.8615343866412563,
+   "low": 0.8449977939235578,
+   "n_groups": 63
+  },
+  "gpu_min": {
+   "P1": 40.78,
+   "P2": 6.68
+  },
+  "incidents": [],
+  "kind": "composite",
+  "lesson_tests": {
+   "confirm": 1,
+   "inconclusive": 1,
+   "out_of_context": 0,
+   "refute": 0
+  },
+  "lessons_applied": [],
+  "lessons_born": [
+   "L006"
+  ],
+  "model": "m-nz-cattle-L2-004",
+  "reference": {
+   "flag": "roughly comparable: benchmark segmentation v0.4 vs our v1.0",
+   "model": "ResNet50-U-Net-timm",
+   "score": 0.8107
+  },
+  "session_id": "m-nz-cattle__main__chain",
+  "task": "m-nz-cattle",
+  "test": {
+   "metric": "miou",
+   "score": 0.8531215832896941,
+   "vault_entry_hash": "sha256:a50d655f918980c777f009a11c68343656a8892a17ee35d52269d6dbfad9eb7a"
+  },
+  "tokens": 249161,
+  "val": {
+   "metric": "miou",
+   "score": 0.8582844149106763,
+   "source": "val_stats.npz"
+  }
  }
 ]

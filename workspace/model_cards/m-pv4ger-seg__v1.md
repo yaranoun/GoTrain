@@ -28,4 +28,4 @@ Tag **production** · registered 2026-11-01T06:35:52Z · written by `gotrain.mod
 - Playbook at the start: applied none; buckets {'apply': 0, 'other_context': 0, 'to_test': 0, 'avoid': 0, 'hidden': 2}.
 - Lessons written here (z in the lesson's own direction):
   - L003 (lead, z +1.31): Doubling lr from 5e-4 to 1e-3 (unet resnet34 imagenet, ~10 epochs, short budget) slightly lowered val miou; faster convergence did not materialize, probably because the higher lr is noisier. Keep lr near 5e-4 for fine-tuning; a weak lead only.
-  - L004 (lead, z +1.22): Replacing the unet decoder with fpn (resnet34 imagenet) slightly lowered val miou, and it did not save wall time within the cap. Prefer unet for high-resolution aerial segmentation where fine boundaries matter; a weak lead only.
+  - L004 (hypothesis, z +1.22): Replacing the unet decoder with fpn (resnet34 imagenet) slightly lowered val miou, and it did not save wall time within the cap. Prefer unet for high-resolution aerial segmentation where fine boundaries matter; a weak lead only.

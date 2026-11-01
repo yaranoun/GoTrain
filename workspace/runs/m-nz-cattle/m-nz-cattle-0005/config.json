@@ -1,0 +1,6 @@
+{
+  "task": "m-nz-cattle",
+  "backbone": "resnet18",
+  "img_size": 768,
+  "time_limit_min": 6.0
+}

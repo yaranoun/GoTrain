@@ -1,0 +1,7 @@
+{
+  "task": "m-nz-cattle",
+  "backbone": "resnet18",
+  "lr": 0.001,
+  "decoder": "deeplabv3plus",
+  "time_limit_min": 6.0
+}
