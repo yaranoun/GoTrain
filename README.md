@@ -36,6 +36,8 @@ machine-wide**, by code. The agent only ever sees the vault hash, never a test s
 
 ## Results
 
+> **Submission tags.** `submission` points at the final `main`: it was moved on 1 Nov 2026 (~08:00 UTC) after merging the `gotrain` CLI with the 1.0.0 packaging, and this README. The earlier submission head is kept as `submission-v1` (215f259). The results are identical in both: they come from the GPU chain merged at 5f6fe9c.
+
 > Filled in from `python -m gotrain.report` after the chain (`report/results.md`, `report/dashboard.html`).
 > Each test score comes from a single post-chain `finalize`, with a 95% grouped bootstrap interval computed from
 > that test pass's `test_stats.npz`. Every GEO-Bench comparison carries a protocol flag (bands, benchmark
