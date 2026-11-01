@@ -167,6 +167,16 @@ def test_unknown_session_and_foreign_workspace_are_refused(tmp_path):
     assert out.returncode == 2 and "refused" in out.stderr
 
 
+def test_header_accepts_a_moved_copy_of_the_workspace(capsys):
+    moved = "/other/box/" + "/".join(verify._tail())
+    ledger.append(sess.SESSIONS, {"type": "session_start", "session_id": "vf-moved", "task": "m-eurosat",
+                                  "arm": "dev", "workspace": moved, "B": 10.0, "R": 1.0, "P1": 7.5, "P2": 2.5})
+    h = verify.header("vf-moved")
+    assert h["workspace"] == moved
+    err = capsys.readouterr()
+    assert f"note: session recorded in {moved}" in err.err and err.out == ""
+
+
 def test_transcript_mismatch_fails_only_the_transcript_check(tmp_path):
     b = _good_session("vf-tr", tmp_path)
     text = b.transcript.read_text().replace("hypothesis for r2", "a different hypothesis")

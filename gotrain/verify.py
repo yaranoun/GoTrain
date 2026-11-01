@@ -6,7 +6,9 @@ Usage:
   GOTRAIN_WORKSPACE=<workspace> python -m gotrain.verify --full     # workspace-wide (Step 14), with or without --session
 
 Reads GOTRAIN_WORKSPACE only. Prints one line per check and exits 1 if any check fails, 2 if the session is not in
-this workspace (or its header names another workspace). Read-only: it never writes anything.
+this workspace (or its header names another workspace). A moved copy of the recorded workspace (a clone or copy whose
+path ends like the recorded one, e.g. .../workspace or .../experiments/playbook-ab/<task>/off/workspace) is accepted,
+with a note on stderr. Read-only: it never writes anything.
 
 - transcript: every agent row has exactly one successful launch_training toolResult whose toolUseId is the row's
   tool_use_id, and that toolUse's input matches the row's hypothesis, parent_run_id, stage and overrides. Every
@@ -33,9 +35,9 @@ import argparse
 import json
 import math
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
-from gotrain import WORKSPACE, knobs, ledger, noise
+from gotrain import REPO, WORKSPACE, knobs, ledger, noise
 from gotrain import session as sess
 
 CHECKS = ("transcript", "ledger", "noise", "pot")
@@ -466,13 +468,33 @@ def verify_full() -> dict:
 
 # --------------------------------------------------------------------------- entry points
 
+def _tail() -> tuple:
+    try:
+        return WORKSPACE.relative_to(REPO).parts   # ('workspace',) or ('experiments', 'playbook-ab', <task>, 'off', 'workspace')
+    except ValueError:
+        return (WORKSPACE.name,)                   # installed package pointed at a clone's workspace/
+
+
+def _same_workspace(recorded: str) -> bool:
+    """The header's workspace is this one, or this one moved (a clone or copy with the same trailing path)."""
+    if not recorded:
+        return False
+    if Path(recorded).resolve() == WORKSPACE.resolve():
+        return True
+    rec, tail = PurePosixPath(recorded.replace(chr(92), "/")).parts, _tail()
+    return len(rec) >= len(tail) and tuple(rec[-len(tail):]) == tuple(tail)
+
+
 def header(session_id: str) -> dict:
     try:
         h = sess.header(session_id)
     except ValueError:
         raise NotFound(f"session {session_id} not found in {WORKSPACE}") from None
-    if Path(h.get("workspace") or "").resolve() != WORKSPACE.resolve():
+    recorded = h.get("workspace") or ""
+    if not _same_workspace(recorded):
         raise NotFound(f"session {session_id} was recorded in {h.get('workspace')}, not {WORKSPACE}: refused")
+    if Path(recorded).resolve() != WORKSPACE.resolve():   # stderr only: stdout must match the MCP verify output
+        print(f"note: session recorded in {recorded}; checking the copy in {WORKSPACE}", file=sys.stderr)
     return h
 
 
