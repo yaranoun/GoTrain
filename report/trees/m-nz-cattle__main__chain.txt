@@ -1,0 +1,13 @@
+- m-nz-cattle-0001 [train, first] resnet34/imagenet lr 0.0005: val 0.8538
+  - m-nz-cattle-0002 [seed_repeat, seed_repeat] resnet34/imagenet lr 0.0005: val 0.8544
+  - m-nz-cattle-0003 [train, within_noise] resnet50/imagenet lr 0.0005: val 0.8537
+  - m-nz-cattle-0004 [train, within_noise] resnet18/imagenet lr 0.0005: val 0.8533
+    - m-nz-cattle-0005 [train, within_noise] resnet18/imagenet lr 0.0005: val 0.8543
+      - m-nz-cattle-L2-002 [level2, level2] tta of m-nz-cattle-0005: val 0.8568
+    - m-nz-cattle-0006 [train, within_noise] resnet18/imagenet lr 0.001: val 0.8550
+      - m-nz-cattle-0007 [train, regressed] resnet18/imagenet lr 0.001: val 0.8505
+      - m-nz-cattle-L2-001 [level2, level2] tta of m-nz-cattle-0006: val 0.8579
+      - m-nz-cattle-0012 [level2, level2] resnet18/imagenet lr 0.001: val 0.8556
+      - m-nz-cattle-L2-004 [level2, level2] ensemble of m-nz-cattle-0006, m-nz-cattle-0005, m-nz-cattle-0001: val 0.8583
+      - m-nz-cattle-L2-006 [level2, level2] ensemble of m-nz-cattle-0006, m-nz-cattle-0005, m-nz-cattle-0001, m-nz-cattle-0012: val 0.8581
+  - m-nz-cattle-L2-003 [level2, level2] tta of m-nz-cattle-0001: val 0.8558
