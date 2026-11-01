@@ -21,9 +21,11 @@ Deterministic: the same inputs give byte-identical results.json, results.md and 
 
 import argparse
 import csv
+import hashlib
 import html
 import json
 import math
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -195,6 +197,16 @@ def sentinel_audit() -> list[dict]:
 
 # --------------------------------------------------------------------------- figures
 
+_PLAIN_SID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,159}")  # fullmatch: '$' would allow a trailing newline
+
+
+def _sid_file(sid: str) -> str:
+    """A file name for a session id: the id itself when it is a plain name, else a hash (never a path)."""
+    if _PLAIN_SID.fullmatch(sid or "") and ".." not in sid:
+        return sid
+    return f"session-{hashlib.sha256(str(sid).encode()).hexdigest()[:16]}"
+
+
 def tree_figure(sid: str, out_dir: Path) -> Path:
     rows = sorted((r for r in ledger.runs().values() if r.get("session_id") == sid),
                   key=lambda r: (r["created_at"], r["run_id"]))
@@ -236,10 +248,10 @@ def tree_figure(sid: str, out_dir: Path) -> Path:
     ax.set_title(f"run tree · {sid}", fontsize=9)
     fig.tight_layout()
     out_dir.mkdir(parents=True, exist_ok=True)
-    png = out_dir / f"{sid}.png"
+    png = out_dir / f"{_sid_file(sid)}.png"
     fig.savefig(png, dpi=100)
     plt.close(fig)
-    (out_dir / f"{sid}.txt").write_text("\n".join(lines) + "\n")
+    png.with_suffix(".txt").write_text("\n".join(lines) + "\n")
     return png
 
 

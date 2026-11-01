@@ -1,10 +1,12 @@
-"""Step 13 gate (production layer, reduced form): LocalStore + doctor, model registry, model cards, read-only MCP
-server over stdio, GoPilot client. Synthetic finalized models in the test workspace; never a real test split."""
+"""Step 13 gate (production layer): LocalStore + doctor, model registry, model cards, the MCP server over stdio
+(default mode: no operator tool; the full server is gated in tests/test_mcp.py), GoPilot client. Synthetic finalized
+models in the test workspace; never a real test split."""
 
 import asyncio
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -22,7 +24,8 @@ REPO = Path(__file__).resolve().parents[1]
 N, N0 = 200, 120
 Y = np.array([0] * N0 + [1] * (N - N0))
 IDS = [f"t{i:03d}" for i in range(N)]
-MCP_TOOLS = {"list_tasks", "list_models", "get_model_card", "get_playbook", "query_runs"}
+READ_TOOLS = {"list_tasks", "list_models", "get_model_card", "get_playbook", "query_runs"}
+OPERATOR_TOOLS = {"finalize", "registry_sync", "promote", "archive", "store_push"}
 
 
 def _sha(path: Path) -> str:
@@ -194,12 +197,15 @@ def test_model_card_never_recomputes_the_test_score(world):
     assert f"Test accuracy: **{100 * score:.2f}%**" in card and "interval unavailable" in card
 
 
-def _mcp(calls):
+def _mcp(calls, job_ws: Path):
     from mcp import ClientSession, StdioServerParameters, stdio_client
+
+    env = {k: v for k, v in os.environ.items() if k != "GOTRAIN_MCP_OPERATOR"}
+    env["GOTRAIN_MCP_WORKSPACE"] = str(job_ws)  # never the repo's .sandbox/mcp
 
     async def go():
         params = StdioServerParameters(command=sys.executable, args=["-m", "gotrain.mcp_server"], cwd=str(REPO),
-                                       env=dict(os.environ))
+                                       env=env)
         async with stdio_client(params) as (r, w):
             async with ClientSession(r, w) as s:
                 await s.initialize()
@@ -213,22 +219,27 @@ def _mcp(calls):
     return asyncio.run(go())
 
 
-def test_mcp_server_lists_read_only_tools_and_serves_a_card(world):
+def test_mcp_server_default_mode_has_no_operator_tool_and_serves_a_card(world, tmp_path):
     names, out = _mcp([("get_model_card", {"task": "m-eurosat"}), ("list_models", {"task": "m-brick-kiln"}),
                        ("list_tasks", {}), ("query_runs", {"task": "m-eurosat", "top_k": 3}),
-                       ("get_playbook", {"task": "m-brick-kiln"})])
-    assert names == MCP_TOOLS
+                       ("get_playbook", {"task": "m-brick-kiln"})], tmp_path / "mcp")
+    assert READ_TOOLS <= names and not names & OPERATOR_TOOLS
     assert out["get_model_card"].startswith("# Model card: m-eurosat:v1") and "INC-001" in out["get_model_card"]
     assert json.loads(out["list_models"])[0]["kind"] == "composite"
     assert {t["task"] for t in json.loads(out["list_tasks"])} >= {"m-eurosat", "m-SA-crop-type", "m-nz-cattle"}
     assert json.loads(out["query_runs"])[0]["run_id"].startswith("s13-eu")
     src = (REPO / "gotrain" / "mcp_server.py").read_text()
-    for forbidden in ("finalize(", "final_test", "launch(", "add_lesson(", "record_tests(", "_write("):
+    assert "final_test" not in src and not re.search(r"\bruns\.(launch|finalize)\b", src)
+    for forbidden in ("add_lesson(", "record_tests(", "_write("):
         assert forbidden not in src, forbidden
 
 
-def test_gopilot_client_fetches_a_model_card(world):
-    out = subprocess.run([sys.executable, str(REPO / "examples" / "gopilot_client.py"), "--task", "m-eurosat"],
-                         cwd=REPO, capture_output=True, text=True, env=dict(os.environ), timeout=120)
+def test_gopilot_client_fetches_a_model_card(world, tmp_path):
+    env = {k: v for k, v in os.environ.items() if k != "GOTRAIN_MCP_OPERATOR"}
+    env["GOTRAIN_MCP_WORKSPACE"] = str(tmp_path / "mcp")  # the client forwards its environment to the server
+    # --skip-session: the demo's dry-run session would run gotrain.run (it plans on Bedrock); tests never do
+    out = subprocess.run([sys.executable, str(REPO / "examples" / "gopilot_client.py"), "--task", "m-eurosat",
+                          "--skip-session"], cwd=REPO, capture_output=True, text=True, env=env, timeout=120)
     assert out.returncode == 0, out.stdout + out.stderr
-    assert "get_model_card" in out.stdout and "# Model card: m-eurosat:v1" in out.stdout
+    assert "get_model_card(task='m-eurosat')" in out.stdout and "\n    Model card: m-eurosat:v1 " in out.stdout
+    assert "start_session: skipped (--skip-session)" in out.stdout and not (tmp_path / "mcp" / "jobs").exists()
