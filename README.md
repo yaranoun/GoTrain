@@ -416,46 +416,41 @@ running order of one session is:
 ### One dataset session
 
 ```mermaid
-flowchart TD
-  START["gotrain train TASK with a budget of B GPU minutes"]
-  HEADER["Session header in sessions.jsonl: code, prompt and playbook hashes; R = B/10, P1 = 0.75 B, P2 = 0.25 B"]
-  subgraph PH1["Phase level1: the Level 1 tree, pot P1"]
-    PROFILE["profile_dataset, save_profile_notes"]
-    PLAN["list_backbones, get_budget, read_playbook"]
-    COMPOSE["compose_config: code builds first config A from the lessons in scope, plus a re-test partner"]
-    LAUNCHA["launch_training: A"]
-    SEED["Harness: seed repeat A prime measures seed noise"]
-    RETEST["launch_training: re-test partner, parent A"]
-    LOOP["launch_training with a hypothesis, wait_run, evaluate_run, record_diagnosis"]
-    GATE["Code: outcome against the incumbent, kept only at z of 2 or more"]
-    POT{"Does P1 still fit one run of R minutes?"}
+flowchart TB
+  START["gotrain train TASK with a budget of B GPU minutes"] --> HEADER["Session header in sessions.jsonl: code, prompt and playbook hashes; R = B/10, P1 = 0.75 B, P2 = 0.25 B"]
+  HEADER --> OPEN
+  subgraph OPEN["Phase level1, the opening"]
+    direction LR
+    PROFILE["Agent profiles the data and reads the playbook"] --> COMPOSE["Code composes config A from the lessons in scope"] --> LAUNCHA["Agent launches A"] --> SEED["Harness: seed repeat A prime measures seed noise"] --> RETEST["Agent launches the re-test partner of A"]
   end
-  TESTS["Code: record_tests re-tests earlier lessons on this session's run pairs"]
-  subgraph PH2["Phase reflect"]
-    MINE["mine_effects: pairs one knob group apart, delta, sigma and z by code"]
-    LESSON["add_lesson: agent writes statement and intended scope, code sets numbers and status"]
+  OPEN --> TREE
+  subgraph TREE["Phase level1, the tree of runs: pot P1, each run capped at R"]
+    direction LR
+    LOOP["Agent: hypothesis, launch_training, wait_run, evaluate_run, record_diagnosis"] --> GATE{"Code: kept only at z of 2 or more against the incumbent"}
+    GATE -->|"P1 still fits a run"| LOOP
   end
-  subgraph PH3["Phase level2: code only, pot P2"]
-    TTA["TTA gate for each top-3 member"]
-    ENS["Equal-weight ensemble, promoted only at z of 2 or more"]
-    SLOT["Trained slot: one more seed of the best recipe, ensemble gated again"]
+  TREE -->|"P1 spent"| REFLECT
+  subgraph REFLECT["Phase reflect"]
+    direction LR
+    TESTS["Code records re-tests of earlier lessons"] --> MINE["mine_effects: delta, sigma and z by code"] --> LESSON["Agent words the lessons; code sets their numbers and status"]
   end
-  subgraph PH4["Phase finalize"]
-    CALL["Agent calls finalize with a rationale"]
-    PICK["Code picks the incumbent and writes the registry line opened"]
-    TEST["Test split read once: test_stats.npz, vault entry, registry line done"]
-    HASH["Agent sees only the vault hash"]
+  REFLECT --> L2
+  subgraph L2["Phase level2: code only, pot P2"]
+    direction LR
+    TTA["TTA gate on each of the top-3 runs"] --> ENS["Equal-weight ensemble, promoted only at z of 2 or more"] --> SLOT["Trained slot: one more seed of the best recipe, gated again"]
   end
-  PUBLISH["Publish: session verify, registry sync, model cards, A/B analysis, report, full verify"]
-  START --> HEADER --> PROFILE --> PLAN --> COMPOSE --> LAUNCHA --> SEED --> RETEST --> LOOP --> GATE --> POT
-  POT -->|"yes"| LOOP
-  POT -->|"no"| TESTS --> MINE --> LESSON --> TTA --> ENS --> SLOT --> CALL --> PICK --> TEST --> HASH --> PUBLISH
+  L2 --> FIN
+  subgraph FIN["Phase finalize"]
+    direction LR
+    CALL["Agent calls finalize with a rationale"] --> PICK["Code picks the model; test registry: opened"] --> TEST["Test split read once: test_stats.npz, vault entry, registry: done"] --> HASH["Agent sees only the vault hash"]
+  end
+  FIN --> PUBLISH["Publish: session verify, registry sync, model cards, A/B analysis, report, full verify"]
   classDef llm fill:#fdf0d5,stroke:#b8860b,color:#222
   classDef code fill:#e3f2fd,stroke:#1565c0,color:#222
   classDef user fill:#eeeeee,stroke:#555555,color:#222
   class START user
-  class PROFILE,PLAN,LAUNCHA,RETEST,LOOP,MINE,LESSON,CALL llm
-  class HEADER,COMPOSE,SEED,GATE,POT,TESTS,TTA,ENS,SLOT,PICK,TEST,HASH,PUBLISH code
+  class PROFILE,LAUNCHA,RETEST,LOOP,LESSON,CALL llm
+  class HEADER,COMPOSE,SEED,GATE,TESTS,MINE,TTA,ENS,SLOT,PICK,TEST,HASH,PUBLISH code
 ```
 
 Yellow steps are the agent's tool calls, blue steps are code, and the grey box is your command. Phase names are
