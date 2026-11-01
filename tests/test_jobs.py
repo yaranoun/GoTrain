@@ -762,3 +762,24 @@ def test_two_new_sessions_in_the_same_second_get_different_ids(captured, monkeyp
     _append(Path(jobs.JOB_WS).resolve() / "sessions.jsonl", *_session_rows(SID, arm="dev", done=()))
     jobs.start_session("m-eurosat", 10, phases="level1", dry_run=True)
     assert captured[-1]["meta"]["session_id"] == "m-eurosat__dev__20261101T000001Z"
+
+
+def test_an_arm_main_session_in_its_finalize_phase_is_never_cancelled(monkeypatch, tmp_path):
+    monkeypatch.setenv("GOTRAIN_MCP_OPERATOR", "1")
+    main = jobs.main_workspace()
+    sid = "m-eurosat__main__chain"
+    meta = {"task": "m-eurosat", "arm": "main", "phases": "level2,finalize", "session_id": sid, "dry_run": False}
+    job_id = _lost_job("session-20261031T000000Z-0f01", "session", meta, workspace=str(main))
+    monkeypatch.setattr(jobs.state, "test_allowed", lambda task: True)
+    assert jobs.cancel(job_id)["status"] == "lost"  # no finalize transcript yet, test split closed: cancellable
+    job_id = _lost_job("session-20261031T000000Z-0f02", "session", meta, workspace=str(main))
+    (main / "agent_logs").mkdir(parents=True, exist_ok=True)
+    (main / "agent_logs" / f"{sid}.finalize.jsonl").write_text("{}\n")
+    with pytest.raises(jobs.JobError, match="has reached its finalize phase"):
+        jobs.cancel(job_id)
+    (main / "agent_logs" / f"{sid}.finalize.jsonl").unlink()
+    monkeypatch.setattr(jobs.state, "test_allowed", lambda task: False)  # its test split is open
+    with pytest.raises(jobs.JobError, match="never cancelled"):
+        jobs.cancel(job_id)
+    dry = _lost_job("session-20261031T000000Z-0f03", "session", {**meta, "dry_run": True}, workspace=str(main))
+    assert jobs.cancel(dry)["status"] == "lost"

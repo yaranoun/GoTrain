@@ -1,25 +1,11 @@
 {
   "mcpServers": {
     "gotrain": {
-      "command": "python",
-      "args": ["-m", "gotrain.mcp_server"],
-      "cwd": "/path/to/GoTrain",
+      "command": "gotrain-mcp",
+      "args": [],
       "env": {
-        "PYTHONPATH": "/path/to/GoTrain",
         "GOTRAIN_WORKSPACE": "/path/to/GoTrain/workspace",
-        "GOTRAIN_MCP_WORKSPACE": "/path/to/GoTrain/.sandbox/mcp/workspace"
-      }
-    },
-    "gotrain-operator": {
-      "command": "python",
-      "args": ["-m", "gotrain.mcp_server"],
-      "cwd": "/path/to/GoTrain",
-      "env": {
-        "PYTHONPATH": "/path/to/GoTrain",
-        "GOTRAIN_WORKSPACE": "/path/to/GoTrain/workspace",
-        "GOTRAIN_MCP_WORKSPACE": "/path/to/GoTrain/.sandbox/mcp/workspace",
-        "GOTRAIN_MCP_MAIN_WORKSPACE": "/path/to/GoTrain/workspace",
-        "GOTRAIN_MCP_OPERATOR": "1"
+        "GOTRAIN_HOME": "/path/to/gotrain-home"
       }
     }
   }

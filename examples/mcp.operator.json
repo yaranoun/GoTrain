@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "gotrain-operator": {
+      "command": "/path/to/GoTrain/.venv/bin/gotrain-mcp",
+      "args": [],
+      "env": {
+        "GOTRAIN_MCP_OPERATOR": "1",
+        "GOTRAIN_WORKSPACE": "/path/to/GoTrain/workspace",
+        "GOTRAIN_MCP_MAIN_WORKSPACE": "/path/to/GoTrain/workspace",
+        "GOTRAIN_MCP_WORKSPACE": "/path/to/GoTrain/.sandbox/mcp/workspace"
+      }
+    }
+  }
+}

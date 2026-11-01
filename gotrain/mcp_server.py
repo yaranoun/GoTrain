@@ -55,10 +55,11 @@ from mcp.server.fastmcp import FastMCP, Image
 from mcp.types import CallToolResult, TextContent, ToolAnnotations
 
 import gotrain
-from gotrain import REPO, jobs, mcp_ops, state
+from gotrain import REPO, jobs, mcp_config, mcp_ops, state
 
 OPERATOR = os.environ.get("GOTRAIN_MCP_OPERATOR") == "1"
-TEXT_CAP = int(os.environ.get("GOTRAIN_MCP_TEXT_CAP") or 6000)
+_CAP_ENV = os.environ.get("GOTRAIN_MCP_TEXT_CAP") or "6000"
+TEXT_CAP = int(_CAP_ENV) if _CAP_ENV.isdigit() else 6000  # a bad value is refused at import (mcp_config.check)
 OPERATOR_TOOLS = ("finalize", "registry_sync", "promote", "archive", "store_push")
 WORKSPACES = ("results", "sandbox")
 CHILD_TIMEOUT_S = 300
@@ -95,18 +96,13 @@ if OPERATOR:
 def _check_workspaces() -> None:
     """The sandbox (job) workspace must be its own folder: never the results or main workspace, inside one, or a
     parent of one. Otherwise sandbox writes (views, reports, predictions, jobs) would land in published results."""
-    sandbox = jobs.JOB_WS.resolve()
-    wss = (("results", gotrain.WORKSPACE.resolve()), ("main", jobs.main_workspace()),
-           ("default", gotrain.DEFAULT_WORKSPACE.resolve()))
-    for name, ws in wss:
-        if sandbox == ws or ws in sandbox.parents or sandbox in ws.parents:
-            raise RuntimeError(f"the MCP sandbox workspace {sandbox} overlaps the {name} workspace {ws}: set "
-                               f"GOTRAIN_MCP_WORKSPACE to a separate folder")
-    for name, ws in wss:  # training logs go to <workspace>/../logs, run ids are numbered per workspace
-        if sandbox.parent == ws.parent:
-            raise RuntimeError(f"the MCP sandbox workspace {sandbox} sits next to the {name} workspace {ws}: both "
-                               f"would write training logs to {ws.parent / 'logs'}; set GOTRAIN_MCP_WORKSPACE to a "
-                               f"folder with its own parent (e.g. <somewhere>/mcp/workspace)")
+    why = mcp_config.workspace_conflict(jobs.JOB_WS, [("results", gotrain.WORKSPACE), ("main", jobs.main_workspace()),
+                                                      ("default", gotrain.DEFAULT_WORKSPACE)])
+    if why:
+        raise RuntimeError(why)
+    problems = [p for p in mcp_config.check(exists=False, fill_defaults=False) if "sandbox workspace" not in p]
+    if problems:
+        raise RuntimeError("; ".join(problems))
 
 
 _check_workspaces()
@@ -119,6 +115,7 @@ async def _lifespan(_server):
 
 
 mcp = FastMCP("gotrain", instructions=INSTRUCTIONS, lifespan=_lifespan)
+mcp._mcp_server.version = mcp_config.version()  # serverInfo.version in initialize (FastMCP takes no version)
 
 
 # --------------------------------------------------------------------------- plumbing
@@ -138,10 +135,22 @@ def _cap(text: str) -> str:
 
 
 def _cap_tail(text: str, cap: int) -> str:
-    """Keep the END of a log (its newest lines: the error and the exit line)."""
+    """Keep the END of a log (its newest lines: the error and the exit line), at most cap characters in all."""
     if len(text) <= cap:
         return text
-    return f"[... {len(text) - cap} earlier characters cut]\n{text[-cap:]}"
+    prefix = f"[... {len(text) - cap} earlier characters cut]\n"
+    return prefix + text[-max(0, cap - len(prefix)):]
+
+
+def _shorten(obj, n: int = 300):
+    """Long strings in a job record cut to n characters (argv, hypotheses, configs): the record stays readable JSON."""
+    if isinstance(obj, str):
+        return obj if len(obj) <= n else f"{obj[:n]}…[{len(obj) - n} cut]"
+    if isinstance(obj, list):
+        return [_shorten(x, n) for x in obj]
+    if isinstance(obj, dict):
+        return {k: _shorten(v, n) for k, v in obj.items()}
+    return obj
 
 
 def _capped(out):
@@ -240,10 +249,17 @@ def _report_dir(workspace: str) -> str:
 
 
 def _job(job: dict, tail: bool = False) -> str:
+    """A job record as JSON within TEXT_CAP: long fields shortened first, so the log tail (its newest lines) and the
+    status always fit (the tools using it are registered uncapped)."""
     out = dict(job)
-    if tail:
-        out["log_tail"] = _cap_tail(jobs.log_tail(job["job_id"], LOG_TAIL), TEXT_CAP // 2)
-    return _json(out)
+    log = _cap_tail(jobs.log_tail(job["job_id"], LOG_TAIL), TEXT_CAP // 2) if tail else None
+    text = _json({**out, **({"log_tail": log} if tail else {})})
+    if len(text) > TEXT_CAP:
+        out = _shorten(out)
+        if tail and len(_json(out)) + len(log) > TEXT_CAP:
+            out.pop("result", None)  # the result's own log_tail repeats the job log
+        text = _json({**out, **({"log_tail": log} if tail else {})})
+    return text if len(text) <= TEXT_CAP else _cap(text)
 
 
 # --------------------------------------------------------------------------- read tools
@@ -415,13 +431,13 @@ def list_jobs(kind: str = "", limit: int = 20) -> str:
     return _json([{k: j.get(k) for k in keep if k in j} for j in jobs.list_jobs(kind or None, limit)])
 
 
-@_tool(read_only=True)
+@_tool(read_only=True, capped=False)
 def get_job(job_id: str) -> str:
     """One job: its record (argv, workspace, status, return code, result) and the last lines of its log."""
     return _job(jobs.get(job_id), tail=True)
 
 
-@_tool(read_only=True)
+@_tool(read_only=True, capped=False)
 def wait_job(job_id: str, timeout_s: float = WAIT_DEFAULT_S) -> str:
     """Wait until a job leaves 'running' or timeout_s passes (default 25 s, at most 50 s, so the call answers within
     client request timeouts: call it again for a long job); the job and its log tail."""
@@ -429,7 +445,7 @@ def wait_job(job_id: str, timeout_s: float = WAIT_DEFAULT_S) -> str:
     return _job(jobs.wait(job_id, min(max(0.0, t), WAIT_MAX_S) if t == t else WAIT_DEFAULT_S), tail=True)
 
 
-@_tool()
+@_tool(capped=False)
 def cancel_job(job_id: str, reason: str = "") -> str:
     """Stop a running job: SIGTERM to its processes, SIGKILL after a grace period (10 s; 30 s for session and train
     jobs). The training runs a session or train job launched are then stopped through the harness (ledger row kept,
@@ -438,7 +454,7 @@ def cancel_job(job_id: str, reason: str = "") -> str:
     return _job(jobs.cancel(job_id, reason), tail=True)
 
 
-@_tool(read_only=True)
+@_tool(read_only=True, capped=False)
 def job_log(job_id: str, lines: int = 60) -> str:
     """The last lines of a job's log (at most 2000; the newest lines are kept when the text cap applies)."""
     return _cap_tail(jobs.log_tail(job_id, lines), TEXT_CAP) or "(empty log)"

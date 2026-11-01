@@ -40,9 +40,9 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-from gotrain import DEFAULT_WORKSPACE, REPO, state
+from gotrain import DEFAULT_WORKSPACE, REPO, mcp_config, state
 
-JOB_WS = Path(os.environ.get("GOTRAIN_MCP_WORKSPACE") or REPO / ".sandbox" / "mcp" / "workspace").resolve()
+JOB_WS = Path(os.environ.get("GOTRAIN_MCP_WORKSPACE") or mcp_config.default_sandbox()).expanduser().resolve()
 JOBS = JOB_WS / "jobs"
 STATUSES = ("running", "done", "failed", "cancelled", "lost")
 MANUAL_STAGES = ("screen", "train")  # stages a manual (MCP) run may use; seed repeats and Level 2 stay the harness's
@@ -271,6 +271,10 @@ def cancel(job_id: str, reason: str = "") -> dict:
     if not operator() and not _inside(Path(job["workspace"]).resolve(), JOB_WS):
         raise JobError(f"{job_id} is an operator job (workspace {job['workspace']}): cancel it from the operator "
                        f"server (GOTRAIN_MCP_OPERATOR=1)")
+    if job["status"] in ("running", "lost") and _may_be_testing(job):
+        raise JobError(f"{job_id} is an arm main session that has reached its finalize phase (or its task's test split "
+                       f"is open): it is never cancelled, since stopping it could use up the task's one test touch "
+                       f"with no vault entry; it ends on its own")
     reason = " ".join((reason or "").split())[:REASON_MAX]
     if job["status"] != "running":
         if job["status"] == "lost":
@@ -298,6 +302,19 @@ def cancel(job_id: str, reason: str = "") -> dict:
             job = {**job, "status": "cancelled", "returncode": -signal.SIGKILL, "finished_at": _now()}
             _write(job_dir, job)
     return _stop_job_runs(job_dir, job, reason)
+
+
+def _may_be_testing(job: dict) -> bool:
+    """A session job of arm main with phase finalize whose finalize transcript exists, or whose task's test split is
+    already open machine-wide: killing it could land between the registry's 'opened' line and the vault entry."""
+    meta = job.get("meta") or {}
+    phases = (meta.get("phases") or "").split(",")
+    if job.get("kind") != "session" or meta.get("arm") != "main" or meta.get("dry_run") or "finalize" not in phases:
+        return False
+    sid = meta.get("session_id") or ""
+    if sid and (Path(job["workspace"]) / "agent_logs" / f"{sid}.finalize.jsonl").exists():
+        return True
+    return not state.test_allowed(meta.get("task") or "")
 
 
 def _kill_same(pid: int | None, start: str | None, sig: int) -> None:
@@ -543,12 +560,16 @@ def launch_run(task: str, config: dict, hypothesis: str, budget: float = 10.0, p
         raise JobError(f"config is not JSON-serializable: {e}") from None
     from gotrain import runs
     from gotrain import session as sess
+    from gotrain.engine import data
 
     try:  # the checks runs.launch makes (keys, ranges, backbone/weights), before a GPU job is started
+        r = sess.pots(budget)["R"]
         runs.validate_config(task, {**{k: v for k, v in config.items() if k != "time_limit_min"},
-                                    "time_limit_min": sess.pots(budget)["R"]})
+                                    "time_limit_min": round(r / 3, 4) if stage == "screen" else r})  # runs.launch's cap
     except runs.ConfigError as e:
         raise JobError(f"invalid config: {e}") from None
+    except (data.CacheMissing, data.StaleCache) as e:
+        raise JobError(f"{task} has no usable data cache yet: run build_cache first ({e})") from None
     argv = [sys.executable, "-m", "gotrain.jobs", "train-run", f"--task={task}", f"--config={cfg}",
             f"--hypothesis={hypothesis.strip()}", f"--budget={float(budget)}", f"--stage={stage}"]
     if parent_run_id:
