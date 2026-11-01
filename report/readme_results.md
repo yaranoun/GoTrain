@@ -7,6 +7,7 @@
 | m-pv4ger-seg | m-pv4ger-seg-L2-002 (composite) | 0.9556 | 0.9505 (0.9418–0.9579, 403 groups) | 0.9408 (roughly comparable: benchmark segmentation v0.4 vs our v1.0) | 40.7 / 7.5 | 188,292 | 2 / 0 |  |
 | m-cashew-plant | m-cashew-plant-L2-004 (composite) | 0.8729 | 0.8729 (0.8709–0.8755, 2 groups) | 0.4873 (not comparable: bands differ (3-channel reference, we use 12); benchmark segmentation v0.4 vs our v1.0; class 0 ('no data') ignored by us, counted by the reference) | 40.6 / 7.2 | 203,781 | 1 / 0 |  |
 | m-SA-crop-type | — | — | not finalized | 0.3041 (not comparable: bands differ (3-channel reference, we use 12); benchmark segmentation v0.4 vs our v1.0; class 0 ('no data') ignored by us, counted by the reference) | 39.7 / 8.6 | 199,328 | 0 / 1 | INC-002 disclosed |
+| m-nz-cattle | m-nz-cattle-L2-004 (composite) | 0.8583 | 0.8531 (0.8450–0.8615, 63 groups) | 0.8107 (roughly comparable: benchmark segmentation v0.4 vs our v1.0) | 40.8 / 6.7 | 249,161 | 1 / 0 |  |
 
 With vs without the playbook (`experiments/playbook-ab/analyze.py`; n = 1, val only):
 
