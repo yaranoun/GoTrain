@@ -16,14 +16,20 @@ import json
 import os
 import subprocess
 import sys
+from pathlib import Path
 
+import gotrain
 from gotrain import mcp_config
 
 
 def _env() -> dict:
+    """The server's environment: defaults filled, and this very gotrain first on PYTHONPATH (with python -P, the
+    client's cwd never shadows it: a folder holding another gotrain/ is not imported)."""
     env = dict(os.environ)
     for k, v in mcp_config.defaults(env).items():
         env.setdefault(k, v)
+    root = str(Path(gotrain.__file__).resolve().parent.parent)
+    env["PYTHONPATH"] = os.pathsep.join(p for p in (root, env.get("PYTHONPATH")) if p)
     return env
 
 
@@ -41,11 +47,16 @@ def main(argv=None) -> None:
     if problems:
         print("gotrain-mcp: configuration error:\n" + "\n".join(f"  - {p}" for p in problems), file=sys.stderr)
         raise SystemExit(2)
-    mcp_config.ensure_dirs(env)
+    try:
+        mcp_config.ensure_dirs(env)
+    except OSError as e:
+        print(f"gotrain-mcp: configuration error:\n  - cannot create {e.filename}: {e.strerror} (set GOTRAIN_HOME, "
+              f"GOTRAIN_MCP_WORKSPACE or GOTRAIN_MCP_INPUT_DIR to a writable folder)", file=sys.stderr)
+        raise SystemExit(2) from None
     if a.check:
         probe = ("import gotrain.mcp_server as m, json; "
                  "print(json.dumps(sorted(t.name for t in m.mcp._tool_manager.list_tools())))")
-        res = subprocess.run([sys.executable, "-c", probe], env=env, capture_output=True, text=True, timeout=300)
+        res = subprocess.run([sys.executable, "-P", "-c", probe], env=env, capture_output=True, text=True, timeout=300)
         conf = mcp_config.resolved(env)
         if res.returncode != 0:
             err = (res.stderr.strip().splitlines() or [f"exit {res.returncode}"])[-1]
@@ -54,7 +65,7 @@ def main(argv=None) -> None:
         tools = json.loads(res.stdout.strip().splitlines()[-1])
         print(json.dumps({**conf, "tools": len(tools), "tool_names": tools}, indent=1))
         return
-    args = [sys.executable, "-m", "gotrain.mcp_server"]
+    args = [sys.executable, "-P", "-m", "gotrain.mcp_server"]
     if a.http:
         args += ["--http", "--host", a.host, "--port", str(a.port)]
     sys.stdout.flush()

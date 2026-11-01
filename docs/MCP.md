@@ -41,13 +41,14 @@ never a test split).
 ## Install
 
 ```bash
-pip install "git+https://github.com/yaranoun/GoTrain.git"           # latest main (Python >= 3.11)
+pip install "git+https://github.com/yaranoun/GoTrain.git"           # main (Python >= 3.11)
 pip install "git+https://github.com/yaranoun/GoTrain.git@v1.0.0"    # a tagged release
 gotrain-mcp --version
 GOTRAIN_WORKSPACE=/path/to/GoTrain/workspace gotrain-mcp --check    # resolved folders + tool count, exit 0 if usable
 ```
 
-On a CPU-only machine install CPU torch first (`pip install torch torchvision --index-url
+Until the `s2` branch is merged into `main` and `v1.0.0` is tagged, install with `...GoTrain.git@s2` (the ref the
+fresh-virtualenv check below used). On a CPU-only machine install CPU torch first (`pip install torch torchvision --index-url
 https://download.pytorch.org/whl/cpu`), or pip pulls the CUDA build.
 
 An installed package lives in site-packages, so nothing defaults to it: `gotrain-mcp` fills every unset folder under
@@ -60,8 +61,8 @@ An installed package lives in site-packages, so nothing defaults to it: `gotrain
   fetched from the artifact store; checkpoints are not in git) and the task's data cache (`download_task`, then
   `build_cache`);
 - **jobs** on this machine (download, cache build, dev sessions, manual runs, evaluations), under the one-GPU-job rule;
-- **not finalize or arm main sessions**: they act only on a source checkout's `<repo>/workspace` (anywhere else
-  counts as a sandbox, where finalize refuses).
+- **not operator mode**: `gotrain-mcp` refuses `GOTRAIN_MCP_OPERATOR=1` on an installed package (finalize, arm main
+  and the registry act only on a source checkout's `<repo>/workspace`).
 
 From a source checkout the defaults are the repository's own folders, as for the rest of GoTrain:
 
@@ -115,8 +116,9 @@ Claude Desktop, `claude_desktop_config.json`):
 
 - `examples/mcp.json`: the installed `gotrain-mcp`, default mode. Set `GOTRAIN_WORKSPACE` to the results folder and
   `GOTRAIN_HOME` to where the sandbox and cache may live. GoPilot uses this entry.
-- `examples/mcp.operator.json`: operator mode (`GOTRAIN_MCP_OPERATOR=1`) on a source checkout, for the operator
-  only: it exposes finalize. Keep it out of shared client configs.
+- `examples/mcp.operator.json`: operator mode (`GOTRAIN_MCP_OPERATOR=1`), for the operator only: it exposes
+  finalize. It needs a source checkout (`pip install -e .`); an installed package refuses operator mode. Keep it out
+  of shared client configs.
 - `examples/mcp.source.json`: a source checkout without installing (`python -m gotrain.mcp_cli` with `PYTHONPATH`).
 
 When the client does not start from your shell (Claude Desktop, GoPilot services), set `command` to the absolute
@@ -149,7 +151,9 @@ npx @modelcontextprotocol/inspector gotrain-mcp
   on, copy it to `.github/workflows/tests.yml` and push with a token that has the `workflow` scope (or add the file in
   the GitHub web UI): the hackathon token cannot create workflow files.
 - **Docker** (optional). `Dockerfile`: CPU, `gotrain-mcp --http --host 0.0.0.0 --port 8765`, everything under the
-  `/data` volume (`GOTRAIN_HOME=/data`, results `/data/workspace`). No authentication: publish the port only on a
+  `/data` volume (`GOTRAIN_HOME=/data`: results `/data/workspace`, sandbox `/data/mcp/workspace`, data cache, state,
+  local store, datasets `GEO_BENCH_DIR=/data/geobench`, `HF_HOME=/data/hf`, `TORCH_HOME=/data/torch`). Default mode
+  only (an installed package refuses operator mode). No authentication: publish the port only on a
   trusted network. Not built on the training instance (it has no docker daemon).
 
 ```bash
@@ -161,7 +165,7 @@ docker run --rm -p 8765:8765 -v gotrain-data:/data -v "$PWD/workspace:/data/work
 
 | | Default mode | Operator mode |
 |---|---|---|
-| Switch | none | `GOTRAIN_MCP_OPERATOR=1` when the server starts |
+| Switch | none | `GOTRAIN_MCP_OPERATOR=1` when the server starts (source checkout only) |
 | Tools | 27 | 32: the 27, plus `finalize`, `registry_sync`, `promote`, `archive`, `store_push` |
 | Reads | results and sandbox workspaces | the same |
 | Work (jobs) | sandbox workspace only, `start_session` arm `dev` only | also arm `main` (main workspace) and `off` (its registered workspace) |
@@ -282,7 +286,7 @@ Every guard lives in code under the server (`gotrain.state`, `gotrain.runs`, `go
   `train`; seed repeats and Level 2 belong to the harness.
 - **predict reads image files only from its input folder.** A file path must resolve (symlinks followed) inside
   `GOTRAIN_MCP_INPUT_DIR` (default `<sandbox>/inputs`); a relative path is taken from that folder. The check runs
-  before the file is opened or tested for existence, so a path outside it (absolute, `../`, `~`, a symlink out, the
+  before the file is opened or tested for existence, so a path outside it (absolute, `../`, a symlink out, the
   folder itself) gets the same answer whether it exists or not. Otherwise pass `"val:<i>"`, `"b64npy:…"` or
   `"b64png:…"`.
 - **Models are loaded safely.** `predict` checks each checkpoint against its recorded sha256 and loads it with
@@ -362,8 +366,10 @@ it with `cancel_job`.
   stopped: …` line. Nothing else stops them: a session job that ends `failed` keeps its runs until `cancel_job` is
   called on it or each run reaches its time cap.
 - `cancel_job` on a `lost` job SIGKILLs its orphaned child's process group only if that pid still has the recorded
-  start time, then stops its runs as above; the status stays `lost`. A `done` or `cancelled` job is returned
-  unchanged (a `failed` one only has its leftover runs stopped). A `finalize` job is never cancelled.
+  start time, then stops its runs as above; the status stays `lost`. A `done` job is returned unchanged; on a
+  `cancelled` or `failed` session / train job, `cancel_job` only stops the runs it launched that are still running
+  (`stopped_runs`). A `finalize` job is never cancelled, nor an arm `main` session job that has reached its finalize
+  phase (its `agent_logs/<session>.finalize.jsonl` exists) or whose task's test split is open.
 - From a shell: `python -m gotrain.jobs list | get <id> | log <id> [-n N] | cancel <id> [--reason R]`. The other
   subcommands (`_exec`, `train-run`, `evaluate-run`, `stop-session-runs`, `finalize`) are started by the job code.
 
@@ -855,8 +861,10 @@ time. It can take up to about a minute for a session job.
 - **Returns** the job and its log tail (`status: "cancelled"`). A `session` or `train` job also lists the training
   runs it launched that were stopped (`stopped_runs`, killed through `runs.kill` in the job's workspace); called on a
   `failed` or `lost` one, it stops those leftover runs too. A lost job's orphaned child is killed if it is still the
-  recorded process, and the status stays `lost`. A `done` or `cancelled` job is returned unchanged.
-- **Guards** a `finalize` job is never cancelled (`error: JobError: a finalize job is never cancelled …`). Default
+  recorded process, and the status stays `lost`. A `done` job is returned unchanged; a `cancelled` or `failed`
+  one only has its leftover runs stopped.
+- **Guards** a `finalize` job is never cancelled (`error: JobError: a finalize job is never cancelled …`), nor an
+  arm `main` session job that has reached its finalize phase or whose task's test split is open. Default
   mode cancels only jobs of the sandbox workspace (`error: JobError: <job_id> is an operator job …`).
 
 Example `{"job_id": "train-20261101T050000Z-91c0", "reason": "wrong config"}` → `{…, "status": "cancelled",
@@ -906,8 +914,8 @@ files.
   Segmentation: `{task, model_id, run_id, kind, tta, shape, class_fractions, mask_path, overlay_png_path}` plus the
   overlay image (true colour next to the mask, ≤ 1024 px).
 - **Guards** reads only the val split (`test:` / `train:` inputs are refused). Image files are read only inside the
-  input folder: a path outside it (absolute, `../`, `~`, a symlink out, the folder itself) is refused before the file
-  is opened or tested for existence, with the same answer for an existing and a missing file. Checkpoint hashes are
+  input folder: a path outside it (absolute, `../`, a symlink out, the folder itself; `~` is not expanded, so a
+  path starting with `~` is a name inside it) is refused before the file is opened or tested for existence, with the same answer for an existing and a missing file. Checkpoint hashes are
   checked before loading. Networks are built without pretrained downloads and loaded strictly. A composite is the
   equal-weight mean of its members' softmax. Segmentation never predicts the ignore class. `cuda` runs in a child
   process under the GPU lock and is refused while the GPU lock or a session lease is held (*GPU busy, not waiting

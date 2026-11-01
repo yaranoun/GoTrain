@@ -635,3 +635,19 @@ def test_server_source_never_reaches_the_test_evaluation():
         assert forbidden not in src, forbidden
     for name in OPERATOR_TOOLS:  # registered only in operator mode
         assert re.search(rf"@_tool\(operator=True\)\ndef {name}\(", src), name
+
+
+def test_job_records_keep_their_log_tail_within_the_text_cap(monkeypatch):
+    from gotrain import mcp_server as m
+
+    rec = {"job_id": "train-20261101T000000Z-0001", "kind": "train", "status": "failed",
+           "argv": ["python", "-m", "gotrain.jobs", "train-run", "--hypothesis=" + "h" * 9000],
+           "meta": {"config": {"note": "c" * 5000}}, "result": {"log_tail": "r" * 4000}}
+    log = "\n".join(f"line {i} " + "x" * 80 for i in range(400)) + "\n[gotrain.jobs] exit 1 (failed) at T"
+    monkeypatch.setattr(m.jobs, "log_tail", lambda job_id, lines=60: log)
+    text = m._job(rec, tail=True)
+    assert len(text) <= m.TEXT_CAP and text.endswith("}")
+    out = json.loads(text)
+    assert out["status"] == "failed" and out["log_tail"].endswith("exit 1 (failed) at T")
+    tail = m._cap_tail(log, 500)
+    assert len(tail) <= 500 and tail.endswith("at T") and tail.startswith("[... ")

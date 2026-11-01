@@ -59,9 +59,11 @@ def test_a_source_checkout_keeps_the_repository_defaults():
     ({"GOTRAIN_WORKSPACE": "/nonexistent-gotrain-results"}, "does not exist"),
     ({"GOTRAIN_MCP_WORKSPACE": "<results>/sub"}, "overlaps the results workspace"),
     ({"GOTRAIN_MCP_WORKSPACE": "<tmp>/sandbox"}, "sits next to the results workspace"),
+    ({"GOTRAIN_STATE_DIR": "<tmp>/results-file"}, "GOTRAIN_STATE_DIR="),
 ])
 def test_bad_configurations_stop_before_the_server_starts(tmp_path, extra, msg):
     (tmp_path / "results").mkdir()
+    (tmp_path / "results-file").write_text("not a folder")
     extra = {k: v.replace("<results>", str(tmp_path / "results")).replace("<tmp>", str(tmp_path))
              for k, v in extra.items()}
     env = _env(tmp_path, **extra)
@@ -115,3 +117,31 @@ def test_workspace_conflict_rules(tmp_path):
     assert "overlaps" in mcp_config.workspace_conflict(tmp_path / "x", [("results", a)])
     assert "sits next to" in mcp_config.workspace_conflict(tmp_path / "x" / "sandbox", [("results", a)])
     assert "overlaps the default" in mcp_config.workspace_conflict(REPO, [("default", DEFAULT_WORKSPACE)])
+
+
+def test_operator_mode_is_refused_on_an_installed_package(monkeypatch, tmp_path):
+    monkeypatch.setattr(mcp_config, "source_checkout", lambda: False)
+    env = {"GOTRAIN_HOME": str(tmp_path / "home"), "GOTRAIN_MCP_OPERATOR": "1"}
+    assert any("operator mode needs a source checkout" in p for p in mcp_config.check(env))
+    assert not any("operator" in p for p in mcp_config.check({**env, "GOTRAIN_MCP_OPERATOR": "0"}))
+
+
+def test_a_folder_that_cannot_be_created_is_a_one_line_error(tmp_path):
+    (tmp_path / "results").mkdir()
+    (tmp_path / "blocker").write_text("a file where a folder should go")
+    env = _env(tmp_path, GOTRAIN_MCP_INPUT_DIR=str(tmp_path / "blocker" / "inputs"))
+    res = subprocess.run([PY, "-m", "gotrain.mcp_cli", "--check"], env=env, capture_output=True, text=True, timeout=120)
+    assert res.returncode == 2 and "configuration error" in res.stderr and "Traceback" not in res.stderr, res.stderr
+
+
+def test_the_launcher_never_imports_a_gotrain_from_the_client_cwd(tmp_path):
+    (tmp_path / "results").mkdir()
+    decoy = tmp_path / "cwd" / "gotrain"
+    decoy.mkdir(parents=True)
+    (decoy / "__init__.py").write_text("raise SystemExit('decoy gotrain imported')\n")
+    res = subprocess.run([PY, "-m", "gotrain.mcp_cli", "--check"], cwd=REPO, env=_env(tmp_path),
+                         capture_output=True, text=True, timeout=300)
+    assert res.returncode == 0, res.stderr[-1500:]
+    probe = subprocess.run([PY, "-c", "import gotrain.mcp_cli as c, os; e = c._env(); print(e['PYTHONPATH'])"],
+                           cwd=REPO, capture_output=True, text=True, timeout=60)
+    assert probe.stdout.split(os.pathsep)[0].strip() == str(REPO)

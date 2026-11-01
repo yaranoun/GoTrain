@@ -17,7 +17,10 @@ ENV GOTRAIN_HOME=/data \
     GOTRAIN_MCP_WORKSPACE=/data/mcp/workspace \
     GOTRAIN_CACHE=/data/cache \
     GOTRAIN_STATE_DIR=/data/state \
-    GOTRAIN_STORE_ROOT=/data/store
+    GOTRAIN_STORE_ROOT=/data/store \
+    GEO_BENCH_DIR=/data/geobench \
+    HF_HOME=/data/hf \
+    TORCH_HOME=/data/torch
 VOLUME /data
 WORKDIR /data
 EXPOSE 8765

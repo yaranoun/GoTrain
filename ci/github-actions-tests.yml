@@ -12,6 +12,9 @@ jobs:
   cpu:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash               # -eo pipefail: a failing command in a pipe fails the step
     env:
       CUDA_VISIBLE_DEVICES: ""
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
@@ -29,6 +32,6 @@ jobs:
           python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
           python -m pip install -e . pytest
       - name: gotrain-mcp --check
-        run: gotrain-mcp --version && GOTRAIN_MCP_WORKSPACE=$RUNNER_TEMP/mcp/workspace gotrain-mcp --check | head -14
+        run: gotrain-mcp --version && GOTRAIN_MCP_WORKSPACE=$RUNNER_TEMP/mcp/workspace gotrain-mcp --check
       - name: Tests
         run: python -m pytest -q tests/

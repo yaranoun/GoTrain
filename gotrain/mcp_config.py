@@ -124,6 +124,9 @@ def check(env=None, exists: bool = True, fill_defaults: bool = True) -> list[str
     op = env.get("GOTRAIN_MCP_OPERATOR", "")
     if op not in ("", "0", "1"):
         out.append(f"GOTRAIN_MCP_OPERATOR must be 0 or 1, not {op!r}")
+    if op == "1" and not source_checkout():
+        out.append("operator mode needs a source checkout (git clone + pip install -e .): finalize, arm main and the "
+                   "registry act on <repo>/workspace, never on an installed package; unset GOTRAIN_MCP_OPERATOR")
     cap = env.get("GOTRAIN_MCP_TEXT_CAP", "")
     if cap and not (cap.isdigit() and int(cap) >= TEXT_CAP_MIN):
         out.append(f"GOTRAIN_MCP_TEXT_CAP must be a whole number of characters >= {TEXT_CAP_MIN}, not {cap!r}")
@@ -144,6 +147,10 @@ def check(env=None, exists: bool = True, fill_defaults: bool = True) -> list[str
     if exists and explicit and not Path(r["results"]).is_dir():
         out.append(f"GOTRAIN_WORKSPACE={r['results']} does not exist: point it at a GoTrain results folder (a "
                    f"clone's workspace/) or create it (an empty folder serves an empty workspace)")
+    for name, var in (("state", "GOTRAIN_STATE_DIR"), ("sandbox", "GOTRAIN_MCP_WORKSPACE")):
+        p = Path(r[name])
+        if exists and p.exists() and not p.is_dir():
+            out.append(f"{var}={p} is not a folder")
     inputs = env.get("GOTRAIN_MCP_INPUT_DIR")
     if exists and inputs and Path(inputs).expanduser().exists() and not Path(inputs).expanduser().is_dir():
         out.append(f"GOTRAIN_MCP_INPUT_DIR={inputs} is not a folder")
