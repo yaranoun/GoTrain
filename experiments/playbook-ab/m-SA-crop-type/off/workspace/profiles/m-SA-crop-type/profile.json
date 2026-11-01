@@ -1,0 +1,156 @@
+{
+  "task": "m-SA-crop-type",
+  "task_type": "segmentation",
+  "sensor": "sentinel-2",
+  "gsd_m": 10,
+  "n_bands": 12,
+  "band_names": [
+    "B01",
+    "B02",
+    "B03",
+    "B04",
+    "B05",
+    "B06",
+    "B07",
+    "B08",
+    "B8A",
+    "B09",
+    "B11",
+    "B12"
+  ],
+  "band_roles": {
+    "red": "B04",
+    "green": "B03",
+    "blue": "B02",
+    "nir": "B08",
+    "swir1": "B11",
+    "swir2": "B12"
+  },
+  "img_shape": [
+    12,
+    256,
+    256
+  ],
+  "splits": {
+    "train": 3000,
+    "val": 1000
+  },
+  "classes": [
+    "no data",
+    "Lucerne/Medics",
+    "Planted pastures (perennial)",
+    "Fallow",
+    "Wine grapes",
+    "Weeds",
+    "Small grain grazing",
+    "Wheat",
+    "Canola",
+    "Rooibos"
+  ],
+  "band_stats": {
+    "B01": {
+      "mean": 475.94,
+      "std": 304.32,
+      "p1": 0.0,
+      "p99": 1373.0
+    },
+    "B02": {
+      "mean": 626.8,
+      "std": 379.05,
+      "p1": 0.0,
+      "p99": 1765.0
+    },
+    "B03": {
+      "mean": 1014.23,
+      "std": 507.6,
+      "p1": 0.0,
+      "p99": 2510.0
+    },
+    "B04": {
+      "mean": 1400.1,
+      "std": 767.6,
+      "p1": 0.0,
+      "p99": 3412.0
+    },
+    "B05": {
+      "mean": 1781.59,
+      "std": 786.06,
+      "p1": 0.0,
+      "p99": 3765.0
+    },
+    "B06": {
+      "mean": 2256.78,
+      "std": 833.96,
+      "p1": 0.0,
+      "p99": 4157.0
+    },
+    "B07": {
+      "mean": 2461.62,
+      "std": 902.37,
+      "p1": 0.0,
+      "p99": 4510.0
+    },
+    "B08": {
+      "mean": 2641.72,
+      "std": 967.91,
+      "p1": 0.0,
+      "p99": 4824.0
+    },
+    "B8A": {
+      "mean": 2671.31,
+      "std": 936.09,
+      "p1": 0.0,
+      "p99": 4745.0
+    },
+    "B09": {
+      "mean": 2698.93,
+      "std": 918.29,
+      "p1": 0.0,
+      "p99": 4706.0
+    },
+    "B11": {
+      "mean": 3225.39,
+      "std": 1160.97,
+      "p1": 0.0,
+      "p99": 5647.0
+    },
+    "B12": {
+      "mean": 2546.73,
+      "std": 1118.7,
+      "p1": 0.0,
+      "p99": 5216.0
+    }
+  },
+  "nonfinite_values": 0,
+  "all_zero_pixel_fraction": 0.0301,
+  "pixel_fraction_train": {
+    "no data": 0.4509,
+    "Lucerne/Medics": 0.0693,
+    "Planted pastures (perennial)": 0.0617,
+    "Fallow": 0.0535,
+    "Wine grapes": 0.0468,
+    "Weeds": 0.0417,
+    "Small grain grazing": 0.0733,
+    "Wheat": 0.1368,
+    "Canola": 0.0266,
+    "Rooibos": 0.0394
+  },
+  "pixel_fraction_val": {
+    "no data": 0.5598,
+    "Lucerne/Medics": 0.047,
+    "Planted pastures (perennial)": 0.0565,
+    "Fallow": 0.0467,
+    "Wine grapes": 0.033,
+    "Weeds": 0.0453,
+    "Small grain grazing": 0.0684,
+    "Wheat": 0.0904,
+    "Canola": 0.0169,
+    "Rooibos": 0.0359
+  },
+  "images": [
+    "/home/sagemaker-user/GoTrain/experiments/playbook-ab/m-SA-crop-type/off/workspace/profiles/m-SA-crop-type/samples_true_color.png",
+    "/home/sagemaker-user/GoTrain/experiments/playbook-ab/m-SA-crop-type/off/workspace/profiles/m-SA-crop-type/samples_false_color.png",
+    "/home/sagemaker-user/GoTrain/experiments/playbook-ab/m-SA-crop-type/off/workspace/profiles/m-SA-crop-type/samples_ndvi.png"
+  ],
+  "agent_notes": "12-band S2 crop type, 9 classes + 'no data' (45% of pixels, class 0). Field-parcel segmentation; classes spectrally similar (cereals, pastures). Multi-temporal info absent. Use all bands; SSL4EO weights might help; d4 aug fine."
+}

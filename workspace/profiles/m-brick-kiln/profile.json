@@ -115,5 +115,5 @@
     "/home/sagemaker-user/GoTrain/workspace/profiles/m-brick-kiln/samples_false_color.png",
     "/home/sagemaker-user/GoTrain/workspace/profiles/m-brick-kiln/samples_ndvi.png"
   ],
-  "agent_notes": ""
+  "agent_notes": "64x64, 10 S2 bands, binary brick kiln (2:1 imbalance). Kilns are small bright/orange blobs; NDVI/SWIR helpful. Small images; 15k train. Budget tight (6 min/run)."
 }

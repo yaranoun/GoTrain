@@ -1,0 +1,5 @@
+run_dir: /home/sagemaker-user/GoTrain/workspace/runs/m-SA-crop-type/m-SA-crop-type-0005
+{"epoch": 2, "train_loss": 2.5591169551094586, "val_miou": 0.13875842558483703, "lr": 0.0008448249456887366, "steps": 374, "elapsed_s": 109.0}
+{"epoch": 4, "train_loss": 2.230433777691846, "val_miou": 0.2690197575440301, "lr": 0.00042280957331108747, "steps": 374, "elapsed_s": 201.2}
+{"epoch": 6, "train_loss": 2.065320776426856, "val_miou": 0.33772330600453937, "lr": 7.204247532951647e-05, "steps": 374, "elapsed_s": 285.1}
+{"epoch": 8, "train_loss": 1.9637737640206745, "val_miou": 0.34113149437422613, "lr": 1.4974430473380096e-11, "steps": 241, "elapsed_s": 343.5}

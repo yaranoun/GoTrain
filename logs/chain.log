@@ -1,0 +1,692 @@
+2026-10-31T19:22:05Z chain start (pid 87338)
+2026-10-31T19:22:05Z start: build_cache m-eurosat
+all requested caches exist
+2026-10-31T19:22:07Z done: build_cache m-eurosat
+2026-10-31T19:22:07Z start: session m-eurosat main level1,reflect,level2,finalize --budget 60
+Session m-eurosat__main__chain · arm main · B 60.0 (R 6.0, P1 45.0, P2 15.0) · workspace /home/sagemaker-user/GoTrain/workspace
+[level1] transcript: /home/sagemaker-user/GoTrain/workspace/agent_logs/m-eurosat__main__chain.level1.jsonl
+
+Tool #1: profile_dataset
+
+Tool #2: list_backbones
+
+Tool #3: get_budget
+
+Tool #4: read_playbook
+
+Tool #5: save_profile_notes
+
+Tool #6: launch_training
+
+Tool #7: compose_config
+
+Tool #8: wait_run
+
+Tool #9: launch_training
+
+Tool #10: wait_run
+
+Tool #11: launch_training
+
+Tool #12: launch_training
+
+Tool #13: wait_run
+
+Tool #14: launch_training
+
+Tool #15: wait_run
+
+Tool #16: launch_training
+
+Tool #17: wait_run
+
+Tool #18: launch_training
+
+Tool #19: wait_run
+
+Tool #20: launch_training
+
+Tool #21: wait_run
+
+Tool #22: get_budget
+I stopped Level 1 because the pot has 4.2 min left and a decision run needs 6.
+
+No change beat the measured noise, so the incumbent is still the first run, m-eurosat-0006 (ResNet18, SSL4EO-MoCo weights, lr 1e-3), at 98.0% validation accuracy. The harness's seed repeat of that run scored 98.7%, so seed-to-seed noise is about 0.7 points.
+
+| Run | Change | Val accuracy | Outcome |
+|---|---|---|---|
+| 0006 | ResNet18, SSL4EO, lr 1e-3 (first run) | 98.0% | incumbent |
+| 0007 | seed repeat of 0006 | 98.7% | noise measurement |
+| 0008 | lr 3e-4 | 98.8% | within noise |
+| 0009 | ResNet50 (only 42 epochs fit in the cap) | 98.7% | within noise |
+| 0010 | lr 3e-4 plus label smoothing 0.1 | 98.9% (best score) | within noise |
+| 0011 | ImageNet ResNet18 at 64 px, with label smoothing | 97.5% | within noise, lower |
+| 0012 | seed repeat of 0010 | 98.6% | within noise |
+
+- **Best recipe:** ResNet18 with SSL4EO-MoCo weights, lr 3e-4 and label smoothing 0.1. It scored 98.9% and 98.6% over two seeds, but neither gain cleared the noise bar.
+- **Weights:** SSL4EO beat ImageNet by about 1 point, but that gap is also within noise.
+- **Not run:** I did not use either screen run or look at the confusion matrices.[level1] end: 22 tool calls, 41.8 min, tokens {'inputTokens': 97459, 'outputTokens': 3310, 'totalTokens': 180822} (transcript m-eurosat__main__chain.level1.md)
+[reflect] transcript: /home/sagemaker-user/GoTrain/workspace/agent_logs/m-eurosat__main__chain.reflect.jsonl
+
+Tool #1: get_budget
+
+Tool #2: query_ledger
+
+Tool #3: mine_effects
+
+Tool #4: read_playbook
+
+Tool #5: add_lesson
+
+Tool #6: add_lesson
+I wrote two lessons, both leads. I left out the effects below.
+
+**Lessons written**
+- **L001 (weights):** SSL4EO-MoCo resnet18 beat ImageNet resnet18 by about 1.4 points of val accuracy (z −1.64 for the ImageNet change). The ImageNet run also used img_size 64 instead of 224, so weights and resolution are confounded. I said so in the lesson.
+- **L002 (learning rate):** Lowering lr from 1e-3 to 3e-4 with SSL4EO resnet18 gained about 0.8 points (z +1.0). The seed repeat of the lr 1e-3 run scored 98.7 against 98.0, so seed noise is about as large as the effect. I marked it weak.
+
+**Effects left out**
+- **0011>0012 (weights, z +1.27):** It repeats the L001 comparison with a different seed, so it adds nothing new.
+- **Label smoothing 0→0.1 (z −0.26 and +0.14):** Too weak to write up. The two runs disagree in sign.
+- **resnet18→resnet50 (z −0.14):** Too weak to write up. It showed no gain, and fewer epochs fit in the cap.
+
+I made no knob requests.[reflect] end: 6 tool calls, 0.3 min, tokens {'inputTokens': 6759, 'outputTokens': 1177, 'totalTokens': 17323} (transcript m-eurosat__main__chain.reflect.md)
+[level2] TTA gate m-eurosat-0010: z +0.00 -> drop
+[level2] TTA gate m-eurosat-0008: z -1.45 -> drop
+[level2] TTA gate m-eurosat-0009: z +0.00 -> drop
+[level2] ensemble m-eurosat-L2-004: z +1.92 vs m-eurosat-0006 -> kept out
+[level2] trained slot m-eurosat-0015: done
+[level2] ensemble+slot m-eurosat-L2-006: z +2.49 vs m-eurosat-0006 -> promoted
+[finalize] transcript: /home/sagemaker-user/GoTrain/workspace/agent_logs/m-eurosat__main__chain.finalize.jsonl
+/opt/conda/lib/python3.12/site-packages/geobench/dataset.py:1243: UserWarning: m-eurosat in the published geo-bench-1.0 benchmark stores incorrect band names and wavelengths for most channels (the pixel data is unaffected), so selecting bands by name returns the wrong channel. See https://github.com/ServiceNow/geo-bench/issues/28 and the 'Known issues' section of the geo-bench README for the correct channel order.
+  warn(
+
+Tool #1: get_budget
+
+Tool #2: query_ledger
+
+Tool #3: finalize
+I finalized the dataset. The code tested the incumbent, the 4-member ensemble m-eurosat-L2-006, on the test split. I only see the vault hash: sha256:dfae022ff91b569528b29f55e3abafde495488890260aa8a0690c8fb283f8581.
+
+The ensemble scored 98.90% on validation. That ties the best single model, m-eurosat-0010, so I kept the ensemble as the more robust choice. The differences between the top candidates (98.70–98.90%) are within seed noise. The ensemble averages two ResNet18 runs (0010, 0008), one ResNet50 run (0009) and an extra ResNet18 seed (0015), all with SSL4EO MoCo weights.
+
+About 4.2 minutes of the Level 1 pot and 8.7 minutes of the Level 2 pot went unused.[finalize] end: 3 tool calls, 0.2 min, tokens {'inputTokens': 5905, 'outputTokens': 483, 'totalTokens': 10351} (transcript m-eurosat__main__chain.finalize.md)
+2026-10-31T20:11:34Z done: session m-eurosat main level1,reflect,level2,finalize --budget 60
+2026-10-31T20:11:34Z start: verify m-eurosat main
+transcript: ok (6 agent rows, 8 launches)
+ledger: ok (13 rows)
+noise: ok (6 decision runs, sigma_seed recorded)
+pot: ok (P1 used 40.81/45, P2 used 6.30/15, 0 screens)
+2026-10-31T20:11:37Z done: verify m-eurosat main
+2026-10-31T20:11:37Z start: commit m-eurosat level1 + reflect + level2 + finalize
+2026-10-31T20:11:37Z committed: chain: m-eurosat level1 + reflect + level2 + finalize
+2026-10-31T20:11:37Z committed: chain: m-eurosat level1 + reflect + level2 + finalize
+2026-10-31T20:11:39Z done: commit m-eurosat level1 + reflect + level2 + finalize
+2026-10-31T20:11:39Z start: build_cache m-brick-kiln
+all requested caches exist
+2026-10-31T20:11:41Z done: build_cache m-brick-kiln
+2026-10-31T20:11:41Z start: session m-brick-kiln main level1,reflect,level2,finalize --budget 60
+Session m-brick-kiln__main__chain · arm main · B 60.0 (R 6.0, P1 45.0, P2 15.0) · workspace /home/sagemaker-user/GoTrain/workspace
+[level1] transcript: /home/sagemaker-user/GoTrain/workspace/agent_logs/m-brick-kiln__main__chain.level1.jsonl
+
+Tool #1: profile_dataset
+
+Tool #2: list_backbones
+
+Tool #3: get_budget
+
+Tool #4: read_playbook
+
+Tool #5: save_profile_notes
+
+Tool #6: compose_config
+
+Tool #7: launch_training
+
+Tool #8: compose_config
+
+Tool #9: wait_run
+
+Tool #10: launch_training
+
+Tool #11: wait_run
+
+Tool #12: launch_training
+
+Tool #13: wait_run
+
+Tool #14: launch_training
+
+Tool #15: wait_run
+
+Tool #16: launch_training
+
+Tool #17: wait_run
+
+Tool #18: launch_training
+
+Tool #19: wait_run
+
+Tool #20: get_budget
+
+Tool #21: launch_training
+
+Tool #22: wait_run
+Level 1 is finished. The 4.3 GPU min left can't fit another 6-min decision run.
+
+- **Best result:** SSL4EO-MoCo resnet18 at lr 3e-4 for 15 epochs (run 0005) scored 99.30% validation accuracy. The ImageNet resnet18 baseline (run 0002) scored 98.60%.
+- **Kept gains:** none. The seed repeat of the baseline scored 98.90%, and no change reached z ≥ 2. The best gains reached z +1.65. Run 0002 is still the incumbent.
+- **What I tried:**
+  - SSL4EO weights instead of ImageNet: 99.10%.
+  - Lower lr (3e-4) on top of that: 99.30%.
+  - resnet50 with SSL4EO weights: 99.00%.
+  - B06 interpolation (`band_fill='interp_b06'`): 99.30%, no change from 0005.
+  - Label smoothing 0.1: 99.20%.
+- **Overall:** all five SSL4EO variants landed at 99.0–99.3%. That is a small edge over ImageNet, but I can't separate it from noise.
+
+I did not use either screen run.[level1] end: 22 tool calls, 41.6 min, tokens {'inputTokens': 84193, 'outputTokens': 2921, 'totalTokens': 167167} (transcript m-brick-kiln__main__chain.level1.md)
+[reflect] transcript: /home/sagemaker-user/GoTrain/workspace/agent_logs/m-brick-kiln__main__chain.reflect.jsonl
+
+Tool #1: get_budget
+
+Tool #2: query_ledger
+
+Tool #3: mine_effects
+
+Tool #4: read_playbook
+I wrote no lessons this session. Only one effect reached the lead threshold, and it repeats an existing lesson.
+
+**Left out:**
+- **ImageNet → SSL4EO-MoCo weights (0002→0004, z +1.26):** this is already recorded as a re-test of L001. It points the same way, +0.5 points. A new lesson would only duplicate it.
+- **lr 1e-3 → 3e-4 (0004→0005, z +0.55):** too weak, and it already re-tests L002.
+- **Label smoothing 0 → 0.1 (0005→0008, z −0.25):** too weak. This is noise.
+- **Band fill `norm_mean` → `interp_b06` (0005→0007, z 0.00):** too weak. This is noise.
+- **resnet18 → resnet50 (0006):** it differs from its parent in more than the backbone, so it isn't a clean single-knob pair. It scored 99.0% against 99.3%.
+
+I'm not requesting any new knobs.[reflect] end: 4 tool calls, 0.1 min, tokens {'inputTokens': 3545, 'outputTokens': 556, 'totalTokens': 10359} (transcript m-brick-kiln__main__chain.reflect.md)
+/home/sagemaker-user/GoTrain/gotrain/engine/data.py:83: UserWarning: The given NumPy array is not writable, and PyTorch does not support non-writable tensors. This means writing to this tensor will result in undefined behavior. You may want to copy the array to protect its data or make it writable before converting it to a tensor. This type of warning will be suppressed for the rest of this program. (Triggered internally at /home/conda/feedstock_root/build_artifacts/libtorch_1762103288612/work/torch/csrc/utils/tensor_numpy.cpp:203.)
+  return torch.from_numpy(to_float(x[idx]))
+[level2] TTA gate m-brick-kiln-0005: z -0.57 -> drop
+[level2] TTA gate m-brick-kiln-0007: z -1.41 -> drop
+[level2] TTA gate m-brick-kiln-0008: z +0.00 -> drop
+[level2] ensemble m-brick-kiln-L2-004: z +2.32 vs m-brick-kiln-0002 -> promoted
+[level2] trained slot m-brick-kiln-0012: done
+[level2] ensemble+slot m-brick-kiln-L2-006: z +0.00 vs m-brick-kiln-L2-004 -> kept out
+[finalize] transcript: /home/sagemaker-user/GoTrain/workspace/agent_logs/m-brick-kiln__main__chain.finalize.jsonl
+
+Tool #1: get_budget
+
+Tool #2: query_ledger
+
+Tool #3: finalize
+Building cache for m-brick-kiln/test (one time)...
+/opt/conda/lib/python3.12/site-packages/geobench/dataset.py:1243: UserWarning: m-brick-kiln in the published geo-bench-1.0 benchmark stores incorrect band names and wavelengths for most channels (the pixel data is unaffected), so selecting bands by name returns the wrong channel. See https://github.com/ServiceNow/geo-bench/issues/29 and the 'Known issues' section of the geo-bench README for the correct channel order.
+  warn(
+I finalized the dataset. The incumbent is the 3-model ensemble `m-brick-kiln-L2-004`, which scored 99.30% on validation. It averages three SSL4EO resnet18 runs (`m-brick-kiln-0005`, `-0007`, `-0008`). The vault hash is sha256:7006508d26da41387a31161886d6fb9071faf2bcf5084ec1f0e9a3468df2e3a6. I never see the test score.
+
+I stopped searching because more runs were unlikely to help. The 4-model ensemble, the best single models and the extra-seed run all landed at the same 99.30%. At the last budget check, 4.2 minutes of the Level 1 pot and 8.8 minutes of the Level 2 pot were unused. Neither is enough for another decision run, since each is capped at 6 minutes.[finalize] end: 3 tool calls, 0.4 min, tokens {'inputTokens': 6276, 'outputTokens': 487, 'totalTokens': 10726} (transcript m-brick-kiln__main__chain.finalize.md)
+2026-10-31T21:00:41Z done: session m-brick-kiln main level1,reflect,level2,finalize --budget 60
+2026-10-31T21:00:41Z start: verify m-brick-kiln main
+transcript: ok (6 agent rows, 7 launches)
+ledger: ok (13 rows)
+noise: ok (6 decision runs, sigma_seed recorded)
+pot: ok (P1 used 40.76/45, P2 used 6.16/15, 0 screens)
+2026-10-31T21:00:43Z done: verify m-brick-kiln main
+2026-10-31T21:00:43Z start: commit m-brick-kiln level1 + reflect + level2 + finalize
+2026-10-31T21:00:43Z committed: chain: m-brick-kiln level1 + reflect + level2 + finalize
+2026-10-31T21:00:43Z committed: chain: m-brick-kiln level1 + reflect + level2 + finalize
+2026-10-31T21:00:45Z done: commit m-brick-kiln level1 + reflect + level2 + finalize
+2026-10-31T21:00:45Z start: build_cache m-pv4ger-seg
+all requested caches exist
+2026-10-31T21:00:47Z done: build_cache m-pv4ger-seg
+2026-10-31T21:00:47Z start: session m-pv4ger-seg main level1,reflect,level2,finalize --budget 60
+Session m-pv4ger-seg__main__chain · arm main · B 60.0 (R 6.0, P1 45.0, P2 15.0) · workspace /home/sagemaker-user/GoTrain/workspace
+[level1] transcript: /home/sagemaker-user/GoTrain/workspace/agent_logs/m-pv4ger-seg__main__chain.level1.jsonl
+
+Tool #1: profile_dataset
+
+Tool #2: list_backbones
+
+Tool #3: get_budget
+
+Tool #4: read_playbook
+
+Tool #5: save_profile_notes
+
+Tool #6: launch_training
+
+Tool #7: compose_config
+
+Tool #8: wait_run
+
+Tool #9: launch_training
+
+Tool #10: wait_run
+
+Tool #11: launch_training
+
+Tool #12: wait_run
+
+Tool #13: launch_training
+
+Tool #14: wait_run
+
+Tool #15: launch_training
+
+Tool #16: wait_run
+
+Tool #17: launch_training
+
+Tool #18: wait_run
+
+Tool #19: launch_training
+
+Tool #20: wait_run
+
+Tool #21: launch_training
+Level 1 is over because the pot can't fit another 6-minute decision run. No run beat the incumbent by more than noise.
+
+- **Best run:** m-pv4ger-seg-0004 reached val mIoU 0.9518. That is resnet34 + unet, ImageNet weights, 10 epochs. It beat the first run (0.9510) by less than the measured noise, so the result is within_noise.
+- **Noise:** the seed repeat of the first run (0.9508) differed by only 0.0001.
+- **Variations tried:** each was within noise of the incumbent.
+
+| Run | Change | Val mIoU |
+|---|---|---|
+| 0005 | resnet18, 14 epochs | 0.9505 |
+| 0006 | FPN decoder | 0.9502 |
+| 0007 | lr 0.001 | 0.9494 |
+| 0008 | resnet50, 8 epochs | 0.9497 |
+
+- **Takeaway:** the model is at a plateau near 0.95 mIoU under the 6-minute cap. I did not get to try DeepLabV3+, which was the next option.[level1] end: 21 tool calls, 41.9 min, tokens {'inputTokens': 76781, 'outputTokens': 3202, 'totalTokens': 160036} (transcript m-pv4ger-seg__main__chain.level1.md)
+[reflect] transcript: /home/sagemaker-user/GoTrain/workspace/agent_logs/m-pv4ger-seg__main__chain.reflect.jsonl
+
+Tool #1: get_budget
+
+Tool #2: query_ledger
+
+Tool #3: mine_effects
+
+Tool #4: read_playbook
+
+Tool #5: add_lesson
+
+Tool #6: add_lesson
+
+Tool #7: request_knob
+I wrote two lessons, both leads (1 ≤ |z| < 2), and logged one knob request.
+
+**Lessons written**
+- **L003 (optimizer):** Raising lr from 5e-4 to 1e-3 lowered val miou slightly (z −1.3). I advise keeping lr near 5e-4.
+- **L004 (decoder):** Switching from unet to fpn lowered val miou slightly (z −1.2). It also didn't save wall time. I advise preferring unet for aerial segmentation.
+
+**Knob request**
+- **Time-aware LR schedule:** The GPU-minute cap stops training before a fixed-epoch cosine schedule finishes. A schedule that anneals to the cap would remove that confound from backbone and lr comparisons.
+
+**Effects left out**
+- **resnet18 and resnet50 vs resnet34:** Neither pair appears in the mined effects, so there was no measured effect to write up.
+- **Epochs 20→10 (run 0004):** This also isn't in the mined effects. The gain was within noise.
+
+All the scores sit close together, between 0.9494 and 0.9518.[reflect] end: 7 tool calls, 0.2 min, tokens {'inputTokens': 6597, 'outputTokens': 1152, 'totalTokens': 17136} (transcript m-pv4ger-seg__main__chain.reflect.md)
+[level2] TTA gate m-pv4ger-seg-0004: z +2.72 -> keep
+[level2] TTA gate m-pv4ger-seg-0002: z +3.38 -> keep
+[level2] TTA gate m-pv4ger-seg-0005: z +3.09 -> keep
+[level2] ensemble m-pv4ger-seg-L2-004: z +0.00 vs m-pv4ger-seg-L2-002 -> kept out
+[level2] trained slot m-pv4ger-seg-0012: done
+[level2] ensemble+slot m-pv4ger-seg-L2-006: z -1.43 vs m-pv4ger-seg-L2-002 -> kept out
+[finalize] transcript: /home/sagemaker-user/GoTrain/workspace/agent_logs/m-pv4ger-seg__main__chain.finalize.jsonl
+
+Tool #1: get_budget
+
+Tool #2: query_ledger
+
+Tool #3: finalize
+Building cache for m-pv4ger-seg/test (one time)...
+I finalized the dataset. The incumbent, a resnet34 UNet with test-time augmentation (m-pv4ger-seg-L2-002), scored 0.9556 mIoU on validation. The vault hash is sha256:4a0e96f8e5d0afa63670215686ea608899a98e12eadd1a9e015839e005be9d63. I never see the test score.
+
+The 3-member ensemble (L2-004) tied it at 0.9556. Adding a fourth member (L2-006) lowered validation to 0.9546. Differences between configs were within noise. That is why I stopped and finalized the incumbent instead of using the remaining budget.
+
+Budget left was 4.3 min in the Level 1 pot and 7.5 min in the Level 2 pot.[finalize] end: 3 tool calls, 0.4 min, tokens {'inputTokens': 6674, 'outputTokens': 483, 'totalTokens': 11120} (transcript m-pv4ger-seg__main__chain.finalize.md)
+2026-10-31T21:50:50Z done: session m-pv4ger-seg main level1,reflect,level2,finalize --budget 60
+2026-10-31T21:50:50Z start: verify m-pv4ger-seg main
+transcript: ok (6 agent rows, 8 launches)
+ledger: ok (13 rows)
+noise: ok (6 decision runs, sigma_seed recorded)
+pot: ok (P1 used 40.74/45, P2 used 7.49/15, 0 screens)
+2026-10-31T21:50:52Z done: verify m-pv4ger-seg main
+2026-10-31T21:50:52Z start: commit m-pv4ger-seg level1 + reflect + level2 + finalize
+2026-10-31T21:50:52Z committed: chain: m-pv4ger-seg level1 + reflect + level2 + finalize
+2026-10-31T21:50:52Z committed: chain: m-pv4ger-seg level1 + reflect + level2 + finalize
+2026-10-31T21:50:54Z done: commit m-pv4ger-seg level1 + reflect + level2 + finalize
+2026-10-31T21:50:54Z start: build_cache m-cashew-plant
+all requested caches exist
+2026-10-31T21:50:56Z done: build_cache m-cashew-plant
+2026-10-31T21:50:56Z start: session m-cashew-plant main level1,reflect,level2,finalize --budget 60
+Session m-cashew-plant__main__chain · arm main · B 60.0 (R 6.0, P1 45.0, P2 15.0) · workspace /home/sagemaker-user/GoTrain/workspace
+[level1] transcript: /home/sagemaker-user/GoTrain/workspace/agent_logs/m-cashew-plant__main__chain.level1.jsonl
+2026-10-31T22:08:36Z chain start (pid 123759)
+2026-10-31T22:08:36Z start: session m-cashew-plant main level1,reflect,level2,finalize --budget 60
+Session m-cashew-plant__main__chain · arm main · B 60.0 (R 6.0, P1 45.0, P2 15.0) · workspace /home/sagemaker-user/GoTrain/workspace
+[level1] transcript: /home/sagemaker-user/GoTrain/workspace/agent_logs/m-cashew-plant__main__chain.level1.jsonl
+
+Tool #1: get_budget
+
+Tool #2: query_ledger
+
+Tool #3: compose_config
+
+Tool #4: launch_training
+
+Tool #5: wait_run
+
+Tool #6: launch_training
+
+Tool #7: wait_run
+
+Tool #8: evaluate_run
+
+Tool #9: record_diagnosis
+
+Tool #10: list_backbones
+
+Tool #11: launch_training
+
+Tool #12: wait_run
+
+Tool #13: launch_training
+
+Tool #14: launch_training
+
+Tool #15: wait_run
+
+Tool #16: launch_training
+
+Tool #17: wait_run
+
+Tool #18: launch_training
+
+Tool #19: wait_run
+
+Tool #20: get_budget
+The Level 1 pot can't fit another 6-minute decision run (4.4 min left), so I'm stopping here.
+
+- **Best by validation score:** m-cashew-plant-0008, resnet18 with SSL4EO-MoCo weights, a U-Net decoder and lr 2e-3, reached val mIoU 0.8458. The harness didn't mark it as the gain to keep, because the improvement over the incumbent was within noise (z +0.42).
+- **Incumbent:** m-cashew-plant-0004, the same model at lr 5e-4, at 0.8177. It is the only change that was kept.
+- **What worked:** switching from ImageNet to SSL4EO-MoCo weights added about 0.14 mIoU. The ImageNet resnet34 baseline scored 0.6777, and its seed repeat scored 0.7446.
+- **What didn't beat noise:**
+  - Raising lr to 1e-3 and 2e-3 gave 0.8331 and 0.8458, both within noise.
+  - resnet50 scored 0.8260, no better than resnet18, and completed fewer epochs in the cap.
+  - The FPN decoder was worse at 0.7542.
+- **Noise:** the two ImageNet runs differ by 0.067 mIoU. That gap is large, so small differences between recipes are hard to call.[level1] end: 20 tool calls, 36.1 min, tokens {'inputTokens': 83269, 'outputTokens': 2874, 'totalTokens': 175614} (transcript m-cashew-plant__main__chain.level1.md)
+[reflect] transcript: /home/sagemaker-user/GoTrain/workspace/agent_logs/m-cashew-plant__main__chain.reflect.jsonl
+
+Tool #1: get_budget
+
+Tool #2: query_ledger
+
+Tool #3: mine_effects
+
+Tool #4: read_playbook
+
+Tool #5: add_lesson
+I wrote one lesson, L005, and left out the other five effects.
+
+**Written**
+- **L005 (lead, z −1.2):** swapping the UNet decoder for FPN, with SSL4EO-MoCo resnet18 on 12-band segmentation, lowered val mIoU by about 0.08. It is a lead because the seed noise (sigma about 0.067) is nearly as large as the drop.
+
+**Left out**
+- **resnet34/imagenet → resnet18/ssl4eo_moco (z +2.08):** this already re-tests L001, so the playbook records it and a new lesson would repeat it. The change also moved the backbone and the weights together.
+- **lr 0.0005 → 0.001 → 0.002 (z +0.19 to +0.42):** too weak for a lesson. The trend is positive, but it is within noise.
+- **resnet18 → resnet50, both SSL4EO (z −0.11):** too weak, and it also re-tests L001.
+
+I didn't request any new knobs.[reflect] end: 5 tool calls, 0.1 min, tokens {'inputTokens': 7163, 'outputTokens': 787, 'totalTokens': 17337} (transcript m-cashew-plant__main__chain.reflect.md)
+[level2] TTA gate m-cashew-plant-0008: z +14.61 -> keep
+[level2] TTA gate m-cashew-plant-0005: z +14.74 -> keep
+[level2] TTA gate m-cashew-plant-0006: z +11.84 -> keep
+[level2] ensemble m-cashew-plant-L2-004: z +12.48 vs m-cashew-plant-0004 -> promoted
+[level2] trained slot m-cashew-plant-0012: done
+[level2] ensemble+slot m-cashew-plant-L2-006: z -0.76 vs m-cashew-plant-L2-004 -> kept out
+[finalize] transcript: /home/sagemaker-user/GoTrain/workspace/agent_logs/m-cashew-plant__main__chain.finalize.jsonl
+
+Tool #1: get_budget
+
+Tool #2: query_ledger
+
+Tool #3: finalize
+Building cache for m-cashew-plant/test (one time)...
+I finalized the dataset. The incumbent was tested once on the test split, and I can't see that score. The vault hash is sha256:23f94b115fbddb467aa1f00f7c216b1330c0038607b4c071e24c49feb61e2e57.
+
+The incumbent is the three-model ensemble with test-time augmentation (m-cashew-plant-L2-004), at 0.8729 validation mIoU. It is level with the best single model with test-time augmentation (0.8730, m-cashew-plant-L2-001) and the four-model ensemble (0.8726, m-cashew-plant-L2-006). I judged further gains to be within noise, so I stopped there.
+
+Budget left was 4.4 GPU minutes in the Level 1 pot and 7.8 minutes in the Level 2 pot.[finalize] end: 3 tool calls, 0.2 min, tokens {'inputTokens': 6396, 'outputTokens': 471, 'totalTokens': 10830} (transcript m-cashew-plant__main__chain.finalize.md)
+2026-10-31T22:52:29Z done: session m-cashew-plant main level1,reflect,level2,finalize --budget 60
+2026-10-31T22:52:29Z start: verify m-cashew-plant main
+transcript: ok (6 agent rows, 8 launches)
+ledger: ok (13 rows)
+noise: ok (6 decision runs, sigma_seed recorded)
+pot: ok (P1 used 40.59/45, P2 used 7.15/15, 0 screens)
+2026-10-31T22:52:30Z done: verify m-cashew-plant main
+2026-10-31T22:52:30Z start: commit m-cashew-plant level1 + reflect + level2 + finalize
+2026-10-31T22:52:31Z committed: chain: m-cashew-plant level1 + reflect + level2 + finalize
+2026-10-31T22:52:31Z committed: chain: m-cashew-plant level1 + reflect + level2 + finalize
+2026-10-31T22:52:33Z done: commit m-cashew-plant level1 + reflect + level2 + finalize
+2026-10-31T22:52:33Z start: snapshot
+a39fdb49ac46dc2390bef54678f836c0e5691e39101c10d90585c90ff89107eb  experiments/playbook-ab/playbook-snapshot.jsonl
+a39fdb49ac46dc2390bef54678f836c0e5691e39101c10d90585c90ff89107eb  experiments/playbook-ab/playbook-snapshot.jsonl
+2026-10-31T22:52:33Z done: snapshot
+2026-10-31T22:52:33Z start: commit playbook snapshot after #4
+2026-10-31T22:52:33Z committed: chain: playbook snapshot after #4
+2026-10-31T22:52:33Z committed: chain: playbook snapshot after #4
+2026-10-31T22:52:34Z done: commit playbook snapshot after #4
+2026-10-31T22:52:34Z start: build_cache m-SA-crop-type
+all requested caches exist
+2026-10-31T22:52:37Z done: build_cache m-SA-crop-type
+2026-10-31T22:52:37Z start: session m-SA-crop-type main level1,reflect --budget 60 --playbook-snapshot experiments/playbook-ab/playbook-snapshot.jsonl
+Session m-SA-crop-type__main__chain · arm main · B 60.0 (R 6.0, P1 45.0, P2 15.0) · workspace /home/sagemaker-user/GoTrain/workspace
+[level1] transcript: /home/sagemaker-user/GoTrain/workspace/agent_logs/m-SA-crop-type__main__chain.level1.jsonl
+
+Tool #1: profile_dataset
+
+Tool #2: list_backbones
+
+Tool #3: get_budget
+
+Tool #4: read_playbook
+
+Tool #5: save_profile_notes
+
+Tool #6: compose_config
+
+Tool #7: launch_training
+
+Tool #8: wait_run
+
+Tool #9: launch_training
+
+Tool #10: wait_run
+
+Tool #11: launch_training
+
+Tool #12: wait_run
+
+Tool #13: launch_training
+
+Tool #14: wait_run
+
+Tool #15: launch_training
+
+Tool #16: wait_run
+
+Tool #17: launch_training
+
+Tool #18: wait_run
+
+Tool #19: launch_training
+
+Tool #20: wait_run
+
+Tool #21: get_budget
+The Level 1 pot has 5.3 min left. That's less than the 6-min cap for a decision run, so I can't launch another one.
+
+**Summary**
+- **Best run:** m-SA-crop-type-0007 (resnet18 with SSL4EO-MoCo weights, FPN decoder, lr 3e-4, 8 epochs) reached val mIoU 0.402.
+- **Incumbent:** the harness still lists run 0001 (resnet18 with SSL4EO weights and the default UNet decoder, 0.382). No change beat the measured noise (needed z ≥ 2), so nothing was marked kept.
+- **Noise:** the seed repeat of 0001 scored 0.333, 0.049 lower. That is larger than every difference between my runs, so the ranking below is not reliable.
+- **Weights and backbone:** SSL4EO resnet18 scored 0.382 against 0.359 for the default resnet34 with ImageNet weights. That is within noise.
+- **Learning rate:** 1e-3 gave 0.341 and 3e-4 gave 0.387. I did not run 5e-4 with the 8-epoch schedule, so that comparison is only against the 20-epoch run 0001.
+- **Decoder:** FPN beat UNet at lr 3e-4 (0.402 against 0.387), which is the opposite of playbook lesson L005. This is also within noise.
+- **Epoch budget:** the 6-min cap stopped runs at about 8–9 epochs, so the model was still undertrained.
+
+I didn't use either of the two screen runs.[level1] end: 21 tool calls, 41.3 min, tokens {'inputTokens': 98526, 'outputTokens': 3307, 'totalTokens': 181886} (transcript m-SA-crop-type__main__chain.level1.md)
+[reflect] transcript: /home/sagemaker-user/GoTrain/workspace/agent_logs/m-SA-crop-type__main__chain.reflect.jsonl
+
+Tool #1: get_budget
+
+Tool #2: query_ledger
+
+Tool #3: mine_effects
+
+Tool #4: read_playbook
+
+Tool #5: request_knob
+I wrote no lessons this session. The five measured effects all had |z| below 1, and code refuses anything under 1.
+
+- **Learning rate, 1e-3 → 3e-4 (z +0.91):** the direction matches the existing lesson L002, and code already counts it as a re-test of L002. It is also too weak to write up.
+- **Learning rate, 5e-4 → 1e-3 (z −0.62):** too weak.
+- **Learning rate, 5e-4 → 3e-4 (z +0.29):** too weak, and it also counts as a re-test of L002.
+- **Backbone and weights, resnet18 SSL4EO → resnet34 ImageNet (z −0.47):** too weak. It is recorded as a re-test of L001, and the direction agrees with it.
+- **Decoder, UNet → FPN (z +0.32):** too weak. Its direction is opposite to L005, which said FPN hurts, but it is recorded as a re-test of L005. The disagreement is well inside the noise.
+
+The main finding is about noise. A seed repeat of the same config scored 0.3326 against 0.3820, so sigma is about 0.05 mIoU. That is larger than any knob effect I measured. Single 6-minute runs can't separate these knobs on this dataset.
+
+I logged one knob request, `seed_repeats_per_decision`. It would let me average 2–3 seeds per arm, or use a shorter fixed-epoch proxy, so effects of this size become measurable.[reflect] end: 5 tool calls, 0.2 min, tokens {'inputTokens': 7154, 'outputTokens': 901, 'totalTokens': 17442} (transcript m-SA-crop-type__main__chain.reflect.md)
+2026-10-31T23:34:11Z done: session m-SA-crop-type main level1,reflect --budget 60 --playbook-snapshot experiments/playbook-ab/playbook-snapshot.jsonl
+2026-10-31T23:34:11Z start: verify m-SA-crop-type main
+transcript: ok (6 agent rows, 7 launches)
+ledger: ok (7 rows)
+noise: ok (6 decision runs, sigma_seed recorded)
+pot: ok (P1 used 39.74/45, P2 used 0.00/15, 0 screens)
+2026-10-31T23:34:13Z done: verify m-SA-crop-type main
+2026-10-31T23:34:13Z start: commit m-SA-crop-type ON level1 + reflect
+2026-10-31T23:34:14Z committed: chain: m-SA-crop-type ON level1 + reflect
+2026-10-31T23:34:14Z committed: chain: m-SA-crop-type ON level1 + reflect
+2026-10-31T23:34:16Z done: commit m-SA-crop-type ON level1 + reflect
+2026-10-31T23:34:16Z start: session m-SA-crop-type off level1 --budget 60
+Session m-SA-crop-type__off__chain · arm off · B 60.0 (R 6.0, P1 45.0, P2 15.0) · workspace /home/sagemaker-user/GoTrain/experiments/playbook-ab/m-SA-crop-type/off/workspace (SANDBOX)
+[level1] transcript: /home/sagemaker-user/GoTrain/experiments/playbook-ab/m-SA-crop-type/off/workspace/agent_logs/m-SA-crop-type__off__chain.level1.jsonl
+
+Tool #1: profile_dataset
+
+Tool #2: list_backbones
+
+Tool #3: get_budget
+
+Tool #4: read_playbook
+
+Tool #5: save_profile_notes
+
+Tool #6: launch_training
+
+Tool #7: compose_config
+
+Tool #8: wait_run
+
+Tool #9: launch_training
+
+Tool #10: wait_run
+
+Tool #11: launch_training
+
+Tool #12: wait_run
+
+Tool #13: launch_training
+
+Tool #14: wait_run
+
+Tool #15: launch_training
+
+Tool #16: launch_training
+
+Tool #17: wait_run
+
+Tool #18: launch_training
+
+Tool #19: wait_run
+
+Tool #20: launch_training
+
+Tool #21: wait_run
+
+Tool #22: get_budget
+The Level 1 pot can't fit another decision run: 5.1 min are left and each run is capped at 6 min.
+
+**Result:** the best run is m-SA-crop-type-0007, with a validation mIoU of 0.4065. It uses resnet18 with SSL4EO-MoCo weights and a DeepLabV3+ decoder. The first baseline, resnet34 with ImageNet weights and a UNet decoder, scored 0.3448.
+
+**What mattered:**
+- **Weights:** moving from ImageNet to SSL4EO-MoCo Sentinel-2 weights, with resnet18, gave +0.033. That was kept against the measured noise.
+- **Decoder:** changing the decoder to FPN gave +0.023, which was within noise. Changing it to DeepLabV3+ was kept, but the gain over FPN was only +0.006, so the two decoders are close.
+- **Learning rate:** raising it to 0.001 made no difference.
+- **Epoch count:** 8 epochs scored below 10, though that difference was within noise. The time cap cut every run short at roughly 6–9 epochs, so none finished its cosine schedule.
+
+**Noise:** the seed repeat of the baseline scored 0.3351 against 0.3448, a gap of about 0.01.
+
+I didn't use either of the two screen runs.[level1] end: 22 tool calls, 42.1 min, tokens {'inputTokens': 97593, 'outputTokens': 3399, 'totalTokens': 181045} (transcript m-SA-crop-type__off__chain.level1.md)
+2026-11-01T00:16:29Z done: session m-SA-crop-type off level1 --budget 60
+2026-11-01T00:16:29Z start: verify m-SA-crop-type off
+transcript: ok (6 agent rows, 8 launches)
+ledger: ok (7 rows)
+noise: ok (6 decision runs, sigma_seed recorded)
+pot: ok (P1 used 39.93/45, P2 used 0.00/15, 0 screens)
+2026-11-01T00:16:32Z done: verify m-SA-crop-type off
+2026-11-01T00:16:32Z start: commit m-SA-crop-type OFF level1
+2026-11-01T00:16:32Z committed: chain: m-SA-crop-type OFF level1
+2026-11-01T00:16:32Z committed: chain: m-SA-crop-type OFF level1
+2026-11-01T00:16:34Z done: commit m-SA-crop-type OFF level1
+2026-11-01T00:16:34Z start: session m-SA-crop-type main level2,finalize
+Session m-SA-crop-type__main__chain · arm main · B 60.0 (R 6.0, P1 45.0, P2 15.0) · workspace /home/sagemaker-user/GoTrain/workspace
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/sagemaker-user/GoTrain/gotrain/run.py", line 398, in <module>
+    main()
+  File "/home/sagemaker-user/GoTrain/gotrain/run.py", line 366, in main
+    summary = level2.run(session, log=lambda m: print(m, flush=True))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/sagemaker-user/GoTrain/gotrain/level2.py", line 187, in run
+    with state.gpu_lock(f"level2:{task}", session_id=sid, workspace=str(WORKSPACE)):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/conda/lib/python3.12/contextlib.py", line 137, in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+  File "/home/sagemaker-user/GoTrain/gotrain/state.py", line 100, in gpu_lock
+    fd = acquire_gpu(owner, **info)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/sagemaker-user/GoTrain/gotrain/state.py", line 68, in acquire_gpu
+    raise Busy("the GPU is busy (one GPU job at a time, machine-wide)"
+gotrain.state.Busy: the GPU is busy (one GPU job at a time, machine-wide): held by off:m-SA-crop-type since 2026-11-01T00:09:58Z
+2026-11-01T00:16:43Z FAILED: session m-SA-crop-type main level2,finalize -> PAUSE set (harness failure; fix, rm PAUSE, rerun)
+2026-11-01T00:17:53Z chain start (pid 179835)
+2026-11-01T00:17:53Z start: session m-SA-crop-type main level2,finalize
+Session m-SA-crop-type__main__chain · arm main · B 60.0 (R 6.0, P1 45.0, P2 15.0) · workspace /home/sagemaker-user/GoTrain/workspace
+[level2] TTA gate m-SA-crop-type-0007: z +2.46 -> keep
+[level2] TTA gate m-SA-crop-type-0006: z +3.94 -> keep
+[level2] TTA gate m-SA-crop-type-0001: z +2.19 -> keep
+[level2] ensemble m-SA-crop-type-L2-004: z +6.02 vs m-SA-crop-type-L2-003 -> promoted
+[level2] trained slot m-SA-crop-type-0012: done
+[level2] ensemble+slot m-SA-crop-type-L2-006: z +2.36 vs m-SA-crop-type-L2-004 -> promoted
+[finalize] transcript: /home/sagemaker-user/GoTrain/workspace/agent_logs/m-SA-crop-type__main__chain.finalize.jsonl
+
+Tool #1: get_budget
+
+Tool #2: query_ledger
+
+Tool #3: finalize
+Building cache for m-SA-crop-type/test (one time)...
+scripts/chain.sh: line 48: 179873 Killed                  python -m gotrain.run --task "$task" --arm "$arm" --phases "$phases" --session-id "${task}__${arm}__chain" "$@"
+2026-11-01T00:28:02Z FAILED: session m-SA-crop-type main level2,finalize -> PAUSE set (harness failure; fix, rm PAUSE, rerun)
+2026-11-01T06:35:06Z operator: marked 'session m-SA-crop-type main level2,finalize' done by hand (finalize killed by OOM after 'opened'; INC-002; operator decision: SA-crop stays without a test score)
+2026-11-01T06:35:06Z chain start (pid 256418)
+2026-11-01T06:35:06Z start: commit m-SA-crop-type level2 + finalize
+2026-11-01T06:35:07Z committed: chain: m-SA-crop-type level2 + finalize
+2026-11-01T06:35:07Z committed: chain: m-SA-crop-type level2 + finalize
+2026-11-01T06:35:09Z done: commit m-SA-crop-type level2 + finalize
+2026-11-01T06:35:09Z chain: queue complete

@@ -1,0 +1,6 @@
+run_dir: /home/sagemaker-user/GoTrain/workspace/runs/m-cashew-plant/m-cashew-plant-0005
+{"epoch": 6, "train_loss": 1.205695431856882, "val_miou": 0.6190239699728864, "lr": 0.0008902334327270292, "steps": 504, "elapsed_s": 82.7}
+{"epoch": 11, "train_loss": 0.4489306269657044, "val_miou": 0.7756173442548113, "lr": 0.0006092509050338524, "steps": 420, "elapsed_s": 154.6}
+{"epoch": 17, "train_loss": 0.2999526214386736, "val_miou": 0.8188528114456098, "lr": 0.00025957141348848287, "steps": 504, "elapsed_s": 233.0}
+{"epoch": 23, "train_loss": 0.23334139044440927, "val_miou": 0.8331101514955258, "lr": 2.7905667822395343e-05, "steps": 504, "elapsed_s": 312.0}
+{"epoch": 26, "train_loss": 0.2161701784966743, "val_miou": 0.8329596671524215, "lr": 9.89296000120099e-11, "steps": 219, "elapsed_s": 348.6}

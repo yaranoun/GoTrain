@@ -1,0 +1,370 @@
+{
+ "task": "m-SA-crop-type",
+ "primary": "miou",
+ "protocol": {
+  "B": 60.0,
+  "R": 6.0,
+  "P1": 45.0,
+  "path": "/home/sagemaker-user/GoTrain/experiments/playbook-ab/PROTOCOL.md",
+  "sha256": "sha256:48f9702228aab90fc4d2a9be942cc97979a8f974ba0b0b90e8e4f016f7faa5e1",
+  "analyze_sha256": "sha256:1adb4c81b665e5d0c8759684e8a43a31ced465ff81df7e78ead4f9a7b383564f"
+ },
+ "analyze_sha256": "sha256:1adb4c81b665e5d0c8759684e8a43a31ced465ff81df7e78ead4f9a7b383564f",
+ "sigma_AB": {
+  "value": 0.04968703791612794,
+  "sigma_seed_used": 0.04943382730313883,
+  "sd_boot": 0.005009835829863243,
+  "sigma_seed_on": 0.04943382730313883,
+  "sigma_seed_off": 0.009717532615068747,
+  "best_on": "m-SA-crop-type-0007",
+  "best_off": "m-SA-crop-type-0007"
+ },
+ "V_star": 0.4065091972670261,
+ "checks": {
+  "same_task": true,
+  "B_matches_protocol": true,
+  "R_matches_protocol": true,
+  "same_code_tree": true,
+  "same_prompt_hash": true,
+  "same_model": true,
+  "on_arm_is_main": true,
+  "off_arm_is_off": true,
+  "off_playbook_empty_and_unwritable": true,
+  "analyze_matches_protocol": true
+ },
+ "arms": {
+  "on": {
+   "session_id": "m-SA-crop-type__main__chain",
+   "workspace": "/home/sagemaker-user/GoTrain/workspace",
+   "arm": "main",
+   "auc": 0.339442,
+   "floor": 0.022813568035029104,
+   "first_run": "m-SA-crop-type-0001",
+   "first_run_val": 0.38198657164796485,
+   "val_at": {
+    "P1/3": 0.38198657164796485,
+    "2P1/3": 0.38198657164796485,
+    "P1": 0.4022988579447979
+   },
+   "best_run": "m-SA-crop-type-0007",
+   "minutes_used": 39.74,
+   "runs": 7,
+   "decision_runs": 6,
+   "wasted": {
+    "failed_or_killed": 0,
+    "within_noise_or_regressed": 5,
+    "repeated_recipe": 1,
+    "total": 5,
+    "run_ids": [
+     "m-SA-crop-type-0003",
+     "m-SA-crop-type-0004",
+     "m-SA-crop-type-0005",
+     "m-SA-crop-type-0006",
+     "m-SA-crop-type-0007"
+    ]
+   },
+   "sigma_seed": 0.04943382730313883,
+   "tokens": {
+    "inputTokens": 98526,
+    "outputTokens": 3307,
+    "totalTokens": 181886
+   },
+   "steps": [
+    [
+     0.0,
+     0.022813568035029104
+    ],
+    [
+     5.7,
+     0.38198657164796485
+    ],
+    [
+     34.09,
+     0.38657486562169274
+    ],
+    [
+     39.74,
+     0.4022988579447979
+    ]
+   ],
+   "points": [
+    [
+     5.7,
+     0.38198657164796485
+    ],
+    [
+     11.37,
+     0.38198657164796485
+    ],
+    [
+     17.19,
+     0.38198657164796485
+    ],
+    [
+     22.64,
+     0.38198657164796485
+    ],
+    [
+     28.36,
+     0.38198657164796485
+    ],
+    [
+     34.09,
+     0.38657486562169274
+    ],
+    [
+     39.74,
+     0.4022988579447979
+    ]
+   ],
+   "events": [
+    {
+     "run_id": "m-SA-crop-type-0001",
+     "x": 5.7,
+     "stage": "train",
+     "status": "done",
+     "score": 0.38198657164796485,
+     "launched_by": "agent",
+     "outcome": "first"
+    },
+    {
+     "run_id": "m-SA-crop-type-0002",
+     "x": 11.37,
+     "stage": "seed_repeat",
+     "status": "done",
+     "score": 0.332552744344826,
+     "launched_by": "harness",
+     "outcome": "seed_repeat"
+    },
+    {
+     "run_id": "m-SA-crop-type-0003",
+     "x": 17.19,
+     "stage": "train",
+     "status": "done",
+     "score": 0.3586666735723013,
+     "launched_by": "agent",
+     "outcome": "within_noise"
+    },
+    {
+     "run_id": "m-SA-crop-type-0004",
+     "x": 22.64,
+     "stage": "train",
+     "status": "done",
+     "score": 0.3722234619611818,
+     "launched_by": "agent",
+     "outcome": "within_noise"
+    },
+    {
+     "run_id": "m-SA-crop-type-0005",
+     "x": 28.36,
+     "stage": "train",
+     "status": "done",
+     "score": 0.34113149437422613,
+     "launched_by": "agent",
+     "outcome": "within_noise"
+    },
+    {
+     "run_id": "m-SA-crop-type-0006",
+     "x": 34.09,
+     "stage": "train",
+     "status": "done",
+     "score": 0.38657486562169274,
+     "launched_by": "agent",
+     "outcome": "within_noise"
+    },
+    {
+     "run_id": "m-SA-crop-type-0007",
+     "x": 39.74,
+     "stage": "train",
+     "status": "done",
+     "score": 0.4022988579447979,
+     "launched_by": "agent",
+     "outcome": "within_noise"
+    }
+   ],
+   "lessons": {
+    "retrieved": 3,
+    "hidden": 2,
+    "applied": 1,
+    "applied_ids": [
+     "L001"
+    ],
+    "retest": {
+     "kind": "A-",
+     "lesson_id": "L001",
+     "config": {}
+    },
+    "tested": 3,
+    "confirmed": 0,
+    "refuted": 0,
+    "inconclusive": 3,
+    "out_of_context": 0,
+    "per_lesson": {
+     "L001": "inconclusive",
+     "L002": "inconclusive",
+     "L005": "inconclusive"
+    }
+   },
+   "minutes_to_2sigma": 5.7
+  },
+  "off": {
+   "session_id": "m-SA-crop-type__off__chain",
+   "workspace": "/home/sagemaker-user/GoTrain/experiments/playbook-ab/m-SA-crop-type/off/workspace",
+   "arm": "off",
+   "auc": 0.332597,
+   "floor": 0.022813568035029104,
+   "first_run": "m-SA-crop-type-0001",
+   "first_run_val": 0.34481115403585855,
+   "val_at": {
+    "P1/3": 0.34481115403585855,
+    "2P1/3": 0.4001458961286021,
+    "P1": 0.4065091972670261
+   },
+   "best_run": "m-SA-crop-type-0007",
+   "minutes_used": 39.93,
+   "runs": 7,
+   "decision_runs": 6,
+   "wasted": {
+    "failed_or_killed": 0,
+    "within_noise_or_regressed": 3,
+    "repeated_recipe": 1,
+    "total": 3,
+    "run_ids": [
+     "m-SA-crop-type-0004",
+     "m-SA-crop-type-0005",
+     "m-SA-crop-type-0006"
+    ]
+   },
+   "sigma_seed": 0.009717532615068747,
+   "tokens": {
+    "inputTokens": 97593,
+    "outputTokens": 3399,
+    "totalTokens": 181045
+   },
+   "steps": [
+    [
+     0.0,
+     0.022813568035029104
+    ],
+    [
+     5.75,
+     0.34481115403585855
+    ],
+    [
+     17.46,
+     0.3774159073641754
+    ],
+    [
+     28.65,
+     0.4001458961286021
+    ],
+    [
+     39.93,
+     0.4065091972670261
+    ]
+   ],
+   "points": [
+    [
+     5.75,
+     0.34481115403585855
+    ],
+    [
+     11.43,
+     0.34481115403585855
+    ],
+    [
+     17.46,
+     0.3774159073641754
+    ],
+    [
+     23.03,
+     0.3774159073641754
+    ],
+    [
+     28.65,
+     0.4001458961286021
+    ],
+    [
+     34.2,
+     0.4001458961286021
+    ],
+    [
+     39.93,
+     0.4065091972670261
+    ]
+   ],
+   "events": [
+    {
+     "run_id": "m-SA-crop-type-0001",
+     "x": 5.75,
+     "stage": "train",
+     "status": "done",
+     "score": 0.34481115403585855,
+     "launched_by": "agent",
+     "outcome": "first"
+    },
+    {
+     "run_id": "m-SA-crop-type-0002",
+     "x": 11.43,
+     "stage": "seed_repeat",
+     "status": "done",
+     "score": 0.3350936214207898,
+     "launched_by": "harness",
+     "outcome": "seed_repeat"
+    },
+    {
+     "run_id": "m-SA-crop-type-0003",
+     "x": 17.46,
+     "stage": "train",
+     "status": "done",
+     "score": 0.3774159073641754,
+     "launched_by": "agent",
+     "outcome": "kept"
+    },
+    {
+     "run_id": "m-SA-crop-type-0004",
+     "x": 23.03,
+     "stage": "train",
+     "status": "done",
+     "score": 0.36343032204087816,
+     "launched_by": "agent",
+     "outcome": "within_noise"
+    },
+    {
+     "run_id": "m-SA-crop-type-0005",
+     "x": 28.65,
+     "stage": "train",
+     "status": "done",
+     "score": 0.4001458961286021,
+     "launched_by": "agent",
+     "outcome": "within_noise"
+    },
+    {
+     "run_id": "m-SA-crop-type-0006",
+     "x": 34.2,
+     "stage": "train",
+     "status": "done",
+     "score": 0.39905838402631777,
+     "launched_by": "agent",
+     "outcome": "within_noise"
+    },
+    {
+     "run_id": "m-SA-crop-type-0007",
+     "x": 39.93,
+     "stage": "train",
+     "status": "done",
+     "score": 0.4065091972670261,
+     "launched_by": "agent",
+     "outcome": "kept"
+    }
+   ],
+   "minutes_to_2sigma": 5.75
+  }
+ },
+ "difference_on_minus_off": {
+  "auc": 0.006845,
+  "first_run_val": 0.037175,
+  "V(P1)": -0.00421,
+  "tokens": 841
+ }
+}

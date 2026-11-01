@@ -1,0 +1,13 @@
+- m-eurosat-0006 [train, first] resnet18/ssl4eo_moco lr 0.001: val 98.00%
+  - m-eurosat-0007 [seed_repeat, seed_repeat] resnet18/ssl4eo_moco lr 0.001: val 98.70%
+  - m-eurosat-0008 [train, within_noise] resnet18/ssl4eo_moco lr 0.0003: val 98.80%
+    - m-eurosat-0009 [train, within_noise] resnet50/ssl4eo_moco lr 0.0003: val 98.70%
+      - m-eurosat-L2-003 [level2, level2] tta of m-eurosat-0009: val 98.70%
+    - m-eurosat-0010 [train, within_noise] resnet18/ssl4eo_moco lr 0.0003: val 98.90%
+      - m-eurosat-0012 [train, within_noise] resnet18/ssl4eo_moco lr 0.0003: val 98.60%
+      - m-eurosat-L2-001 [level2, level2] tta of m-eurosat-0010: val 98.90%
+      - m-eurosat-L2-004 [level2, level2] ensemble of m-eurosat-0010, m-eurosat-0008, m-eurosat-0009: val 98.70%
+      - m-eurosat-0015 [level2, level2] resnet18/ssl4eo_moco lr 0.0003: val 98.80%
+      - m-eurosat-L2-006 [level2, level2] ensemble of m-eurosat-0010, m-eurosat-0008, m-eurosat-0009, m-eurosat-0015: val 98.90%
+    - m-eurosat-L2-002 [level2, level2] tta of m-eurosat-0008: val 98.60%
+- m-eurosat-0011 [train, within_noise] resnet18/imagenet lr 0.0003: val 97.50%

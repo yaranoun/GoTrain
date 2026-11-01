@@ -1,0 +1,12 @@
+{
+ "task": "m-cashew-plant",
+ "mechanism": "tta",
+ "members": [
+  {
+   "run_id": "m-cashew-plant-0005",
+   "run_dir": "runs/m-cashew-plant/m-cashew-plant-0005",
+   "tta": true,
+   "checkpoint_sha256": "sha256:b033643930133a71962520a3d8ef879461689dc85d3a52494109695ac55a24de"
+  }
+ ]
+}

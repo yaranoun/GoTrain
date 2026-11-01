@@ -1,0 +1,9 @@
+{
+  "task": "m-brick-kiln",
+  "backbone": "resnet18",
+  "epochs": 15,
+  "weights": "ssl4eo_moco",
+  "lr": 0.0003,
+  "seed": 101,
+  "time_limit_min": 6.0
+}

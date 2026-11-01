@@ -1,0 +1,7 @@
+{
+  "task": "m-brick-kiln",
+  "backbone": "resnet18",
+  "weights": "imagenet",
+  "epochs": 15,
+  "time_limit_min": 6.0
+}

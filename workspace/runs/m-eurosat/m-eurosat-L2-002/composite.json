@@ -1,0 +1,12 @@
+{
+ "task": "m-eurosat",
+ "mechanism": "tta",
+ "members": [
+  {
+   "run_id": "m-eurosat-0008",
+   "run_dir": "runs/m-eurosat/m-eurosat-0008",
+   "tta": true,
+   "checkpoint_sha256": "sha256:127c311311e148137d289fe9ec42d682ed03b6467b8bb1fcc4cd47b5720a7254"
+  }
+ ]
+}

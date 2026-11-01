@@ -32,7 +32,17 @@ machine-wide**, by code. The agent only ever sees the vault hash, never a test s
 
 <!-- results:begin (written by python -m gotrain.report --readme; do not edit by hand) -->
 
-*Results table: written here by `python -m gotrain.report --readme` when the chain ends.*
+| Task | Model | Val | Test (95% interval) | GEO-Bench reference | GPU-min L1 / L2 | Tokens | Lessons born / applied | Notes |
+|---|---|---|---|---|---|---|---|---|
+| m-eurosat | m-eurosat-L2-006 (composite) | 98.90% | 98.60% (97.80%–99.30%, 1000 groups) | 98.00% (not comparable: bands differ (3-channel reference, we use 13); benchmark classification v0.8.5 vs our v1.0) | 40.8 / 6.3 | 208,496 | 2 / 0 | INC-001 disclosed |
+| m-brick-kiln | m-brick-kiln-L2-004 (composite) | 99.30% | 98.60% (97.80%–99.30%, 999 groups) | 98.87% (not comparable: bands differ (3-channel reference, we use 10); benchmark classification v0.8.5 vs our v1.0) | 40.8 / 6.2 | 188,252 | 0 / 0 |  |
+| m-pv4ger-seg | m-pv4ger-seg-L2-002 (composite) | 0.9556 | 0.9505 (0.9418–0.9579, 403 groups) | 0.9408 (roughly comparable: benchmark segmentation v0.4 vs our v1.0) | 40.7 / 7.5 | 188,292 | 2 / 0 |  |
+| m-cashew-plant | m-cashew-plant-L2-004 (composite) | 0.8729 | 0.8729 (0.8709–0.8755, 2 groups) | 0.4873 (not comparable: bands differ (3-channel reference, we use 12); benchmark segmentation v0.4 vs our v1.0; class 0 ('no data') ignored by us, counted by the reference) | 40.6 / 7.2 | 203,781 | 1 / 0 |  |
+| m-SA-crop-type | — | — | not finalized | 0.3041 (not comparable: bands differ (3-channel reference, we use 12); benchmark segmentation v0.4 vs our v1.0; class 0 ('no data') ignored by us, counted by the reference) | 39.7 / 8.6 | 199,328 | 0 / 1 | INC-002 disclosed |
+
+With vs without the playbook (`experiments/playbook-ab/analyze.py`; n = 1, val only):
+
+- **m-SA-crop-type** (held out; B = 60, R = 6): anytime AUC ON 0.3394 vs OFF 0.3326 (Δ +0.0068); best val at P1 0.4023 vs 0.4065; first run 0.3820 vs 0.3448; σ_AB 0.0497.
 
 <!-- results:end -->
 
@@ -46,6 +56,25 @@ accuracy 0.895). No model, config or decision was chosen with it. The vault entr
 only. Its score is reported together with this incident. The fixes are in code: finalize accepts only finished
 runs, tool checks run in a sandbox where finalize refuses, and a machine-wide test registry allows one test touch
 per dataset.
+
+**Disclosed incident (INC-002).** On 1 Nov at 00:28 UTC, the held-out m-SA-crop-type's one test evaluation was
+killed by the kernel's out-of-memory killer while it loaded the test split into memory. The test registry had
+already recorded `opened`, by design before any test data is read. No prediction, metric or `test_stats.npz` was
+produced, and there is no vault entry. By our own rule an `opened` line without `done` uses up the dataset's one test
+touch, so `final_test` refuses m-SA-crop-type, and we report it without a test score: the guard held even against
+us (`workspace/vault_incidents.jsonl`). Its with/without-playbook result uses the validation split only, by
+protocol, so it is unaffected.
+
+**How to read the results.**
+- With vs without the playbook: the ON arm started 3.7 points higher (first run, from the playbook's confirmed SSL4EO
+  lesson) and stayed ahead on the pre-registered primary metric (+0.007 AUC). The OFF arm found the same weights by
+  its third run and ended 0.4 points higher. Every difference is inside 2σ (σ_AB ≈ 0.05): one paired run suggests,
+  it does not prove.
+- m-cashew-plant's test split is 50 images from only 2 locations, so its 95% interval is not meaningful. Its
+  400-image validation split is the steadier signal.
+- Operational note: at 00:16 UTC a finished training process crashed at exit and held the GPU lock while writing a
+  core dump. The chain paused itself; the process was stopped and a reaper was added (`logs/reaper.log`). No result
+  was affected.
 
 ## Quickstart
 

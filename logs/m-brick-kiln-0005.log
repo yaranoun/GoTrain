@@ -1,0 +1,8 @@
+run_dir: /home/sagemaker-user/GoTrain/workspace/runs/m-brick-kiln/m-brick-kiln-0005
+/home/sagemaker-user/GoTrain/gotrain/engine/data.py:83: UserWarning: The given NumPy array is not writable, and PyTorch does not support non-writable tensors. This means writing to this tensor will result in undefined behavior. You may want to copy the array to protect its data or make it writable before converting it to a tensor. This type of warning will be suppressed for the rest of this program. (Triggered internally at /home/conda/feedstock_root/build_artifacts/libtorch_1762103288612/work/torch/csrc/utils/tensor_numpy.cpp:203.)
+  return torch.from_numpy(to_float(x[idx]))
+{"epoch": 3, "train_loss": 0.16518922046566686, "val_accuracy": 0.974974974974975, "lr": 0.00026905608975873527, "steps": 705, "elapsed_s": 77.5}
+{"epoch": 6, "train_loss": 0.08223927778502306, "val_accuracy": 0.988988988988989, "lr": 0.00018873926802251946, "steps": 705, "elapsed_s": 149.2}
+{"epoch": 9, "train_loss": 0.06556042173599944, "val_accuracy": 0.98998998998999, "lr": 9.235837284724705e-05, "steps": 705, "elapsed_s": 220.9}
+{"epoch": 12, "train_loss": 0.04780909453406402, "val_accuracy": 0.98998998998999, "lr": 1.991974395558513e-05, "steps": 705, "elapsed_s": 292.6}
+{"epoch": 15, "train_loss": 0.037589117508780745, "val_accuracy": 0.992992992992993, "lr": 3.749633653571393e-11, "steps": 560, "elapsed_s": 349.6}

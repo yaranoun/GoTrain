@@ -1,0 +1,9 @@
+{
+  "task": "m-SA-crop-type",
+  "backbone": "resnet18",
+  "epochs": 8,
+  "lr": 0.0003,
+  "weights": "ssl4eo_moco",
+  "decoder": "fpn",
+  "time_limit_min": 6.0
+}

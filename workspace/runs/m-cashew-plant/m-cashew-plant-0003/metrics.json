@@ -1,0 +1,28 @@
+{
+  "primary": "miou",
+  "val": {
+    "per_class_iou": [
+      null,
+      0.7371,
+      0.7829,
+      0.7028,
+      0.8308,
+      0.778,
+      0.636
+    ],
+    "miou": 0.7446160720148193
+  },
+  "val_best_epoch_inmemory": 0.7446160720148193,
+  "best_epoch": 20,
+  "epochs_run": 24,
+  "val_passes": 5,
+  "steps": 1965,
+  "train_loss_final": 0.43788282202001205,
+  "gpu_minutes": 5.82,
+  "startup_s": 4.9,
+  "val_pass_s": 3.5,
+  "stopped_by": "time",
+  "stopped_early": "run cap 6.0 min",
+  "lr_final_fraction": 0.0,
+  "val_stats_sha256": "sha256:e9f908e2ca1a2ece7b0bd951797266c094273992bf7140f287c7afd3206175de"
+}

@@ -1,0 +1,12 @@
+{
+ "task": "m-SA-crop-type",
+ "mechanism": "tta",
+ "members": [
+  {
+   "run_id": "m-SA-crop-type-0006",
+   "run_dir": "runs/m-SA-crop-type/m-SA-crop-type-0006",
+   "tta": true,
+   "checkpoint_sha256": "sha256:48f7ac7b7a079f4ed7b5e7f2eff6675972c8b22d7c9ba2bed18dd1a4e7432976"
+  }
+ ]
+}

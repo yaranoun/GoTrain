@@ -1,0 +1,12 @@
+{
+ "task": "m-pv4ger-seg",
+ "mechanism": "tta",
+ "members": [
+  {
+   "run_id": "m-pv4ger-seg-0004",
+   "run_dir": "runs/m-pv4ger-seg/m-pv4ger-seg-0004",
+   "tta": true,
+   "checkpoint_sha256": "sha256:078bb8edb14fee0427607d260a22b7efcf32c655b36df983a4ac98970f6ab67d"
+  }
+ ]
+}

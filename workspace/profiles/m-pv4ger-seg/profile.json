@@ -60,5 +60,5 @@
   "images": [
     "/home/sagemaker-user/GoTrain/workspace/profiles/m-pv4ger-seg/samples_true_color.png"
   ],
-  "agent_notes": ""
+  "agent_notes": "Aerial RGB 0.1m, 320px, binary solar pv (20% pixels). Panels vary in size, blue/grey on roofs; confusable with dark roofs/windows. ImageNet backbones only. D4 aug valid."
 }

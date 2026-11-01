@@ -1,0 +1,8 @@
+{
+  "task": "m-cashew-plant",
+  "backbone": "resnet34",
+  "weights": "imagenet",
+  "decoder": "unet",
+  "seed": 1,
+  "time_limit_min": 6.0
+}
